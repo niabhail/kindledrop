@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Browse Recipes - Kindledrop{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-gray-900">Browse Recipes</h1>
+        <a href="/" class="text-gray-600 hover:text-gray-900">&larr; Back to Dashboard</a>
+    </div>
+
+    <form method="get" class="flex gap-4">
+        <div class="flex-1">
+            <input type="text" name="search" value="{{ search or '' }}" placeholder="Search recipes..."
+                class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+        <select name="language" class="px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+            <option value="">All languages</option>
+            <option value="en" {% if language == 'en' %}selected{% endif %}>English</option>
+            <option value="de" {% if language == 'de' %}selected{% endif %}>German</option>
+            <option value="fr" {% if language == 'fr' %}selected{% endif %}>French</option>
+            <option value="es" {% if language == 'es' %}selected{% endif %}>Spanish</option>
+            <option value="it" {% if language == 'it' %}selected{% endif %}>Italian</option>
+            <option value="pt" {% if language == 'pt' %}selected{% endif %}>Portuguese</option>
+            <option value="nl" {% if language == 'nl' %}selected{% endif %}>Dutch</option>
+            <option value="ru" {% if language == 'ru' %}selected{% endif %}>Russian</option>
+            <option value="zh" {% if language == 'zh' %}selected{% endif %}>Chinese</option>
+            <option value="ja" {% if language == 'ja' %}selected{% endif %}>Japanese</option>
+        </select>
+        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+            Search
+        </button>
+    </form>
+
+    {% if recipes %}
+    <div class="bg-white shadow rounded-lg divide-y divide-gray-200">
+        {% for recipe in recipes %}
+        <div class="px-4 py-4 flex items-center justify-between hover:bg-gray-50">
+            <div>
+                <p class="text-sm font-medium text-gray-900">{{ recipe.title }}</p>
+                <p class="text-xs text-gray-500">
+                    {% if recipe.language %}{{ recipe.language | upper }}{% endif %}
+                    {% if recipe.description %} &middot; {{ recipe.description }}{% endif %}
+                </p>
+            </div>
+            <a href="/subscriptions/new?recipe={{ recipe.name }}&title={{ recipe.title | urlencode }}"
+                class="px-3 py-1 text-sm bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100">
+                + Subscribe
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="flex items-center justify-between">
+        <p class="text-sm text-gray-500">
+            Showing {{ ((page - 1) * page_size) + 1 }} - {{ [page * page_size, total] | min }} of {{ total }} recipes
+        </p>
+        <div class="flex gap-2">
+            {% if page > 1 %}
+            <a href="?page={{ page - 1 }}{% if search %}&search={{ search }}{% endif %}{% if language %}&language={{ language }}{% endif %}"
+                class="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50">
+                &larr; Previous
+            </a>
+            {% endif %}
+            {% if page * page_size < total %}
+            <a href="?page={{ page + 1 }}{% if search %}&search={{ search }}{% endif %}{% if language %}&language={{ language }}{% endif %}"
+                class="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50">
+                Next &rarr;
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% elif search or language %}
+    <div class="bg-white shadow rounded-lg p-8 text-center">
+        <p class="text-gray-500">No recipes found matching your criteria.</p>
+    </div>
+    {% else %}
+    <div class="bg-white shadow rounded-lg p-8 text-center">
+        <p class="text-gray-500">Loading recipes...</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
