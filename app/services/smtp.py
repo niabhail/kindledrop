@@ -73,6 +73,7 @@ async def send_kindle_email(
     to_email: str,
     subject: str,
     epub_path: Path,
+    display_name: str | None = None,
 ) -> None:
     """
     Send EPUB file to Kindle via email.
@@ -82,6 +83,7 @@ async def send_kindle_email(
         to_email: Recipient email (Kindle address)
         subject: Email subject line
         epub_path: Path to EPUB file to attach
+        display_name: Human-readable name for the attachment (becomes Kindle title)
 
     Raises:
         SMTPSizeError: If file exceeds 7MB limit
@@ -114,13 +116,14 @@ async def send_kindle_email(
     )
     message.attach(body)
 
-    # Attach EPUB file
+    # Attach EPUB file with human-readable filename for Kindle title
+    attachment_filename = f"{display_name}.epub" if display_name else epub_path.name
     with open(epub_path, "rb") as f:
         attachment = MIMEApplication(f.read(), _subtype="epub+zip")
         attachment.add_header(
             "Content-Disposition",
             "attachment",
-            filename=epub_path.name,
+            filename=attachment_filename,
         )
         message.attach(attachment)
 

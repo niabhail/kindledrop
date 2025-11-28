@@ -209,11 +209,14 @@ class DeliveryEngine:
             await self._update_status(db, delivery, DeliveryStatus.SENDING)
 
             smtp_config = SMTPConfig.from_dict(user.smtp_config)
+            # Format display name as "Subscription Name - YYYY-MM-DD" for Kindle title
+            display_name = f"{subscription.name} - {now.strftime('%Y-%m-%d')}"
             await send_kindle_email(
                 config=smtp_config,
                 to_email=user.kindle_email,
                 subject=f"Kindledrop: {subscription.name}",
                 epub_path=output_path,
+                display_name=display_name,
             )
 
             # 5. SUCCESS - update delivery and subscription
