@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Kindledrop{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <h1 class="text-2xl font-bold text-gray-900">Settings</h1>
+
+    {% if error %}
+    <div class="p-4 rounded-md bg-red-50 text-red-700">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    {% if success %}
+    <div class="p-4 rounded-md bg-green-50 text-green-700">
+        {{ success }}
+    </div>
+    {% endif %}
+
+    <!-- Kindle Email -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-5 border-b border-gray-200">
+            <h2 class="text-lg font-medium text-gray-900">Kindle Email</h2>
+            <p class="mt-1 text-sm text-gray-500">Your Send-to-Kindle email address</p>
+        </div>
+        <form action="/settings" method="post" class="p-4">
+            <input type="hidden" name="section" value="kindle">
+            <div class="max-w-lg">
+                <label for="kindle_email" class="block text-sm font-medium text-gray-700">Kindle Email</label>
+                <input type="email" name="kindle_email" id="kindle_email"
+                    value="{{ user.kindle_email or '' }}"
+                    placeholder="your-name@kindle.com"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2">
+                <p class="mt-1 text-xs text-gray-500">Find this in your Amazon account under "Manage Your Content and Devices"</p>
+            </div>
+            <div class="mt-4">
+                <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
+                    Save Kindle Email
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- SMTP Settings -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-5 border-b border-gray-200">
+            <h2 class="text-lg font-medium text-gray-900">SMTP Settings</h2>
+            <p class="mt-1 text-sm text-gray-500">Email server configuration for sending to your Kindle</p>
+        </div>
+        <form action="/settings" method="post" class="p-4">
+            <input type="hidden" name="section" value="smtp">
+            <div class="grid grid-cols-1 gap-4 max-w-2xl">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="smtp_host" class="block text-sm font-medium text-gray-700">SMTP Host</label>
+                        <input type="text" name="smtp_host" id="smtp_host"
+                            value="{{ smtp.host or '' }}"
+                            placeholder="smtp.mailjet.com"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2">
+                    </div>
+                    <div>
+                        <label for="smtp_port" class="block text-sm font-medium text-gray-700">Port</label>
+                        <input type="number" name="smtp_port" id="smtp_port"
+                            value="{{ smtp.port or 587 }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="smtp_username" class="block text-sm font-medium text-gray-700">Username</label>
+                        <input type="text" name="smtp_username" id="smtp_username"
+                            value="{{ smtp.username or '' }}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2">
+                    </div>
+                    <div>
+                        <label for="smtp_password" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" name="smtp_password" id="smtp_password"
+                            placeholder="{% if smtp.password %}********{% endif %}"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2">
+                        {% if smtp.password %}
+                        <p class="mt-1 text-xs text-gray-500">Leave blank to keep existing password</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div>
+                    <label for="smtp_from_email" class="block text-sm font-medium text-gray-700">From Email</label>
+                    <input type="email" name="smtp_from_email" id="smtp_from_email"
+                        value="{{ smtp.from_email or '' }}"
+                        placeholder="kindledrop@yourdomain.com"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2">
+                    <p class="mt-1 text-xs text-gray-500">Must be whitelisted in your Amazon account</p>
+                </div>
+                <div class="flex items-center">
+                    <input type="checkbox" name="smtp_use_tls" id="smtp_use_tls"
+                        {% if smtp.use_tls != false %}checked{% endif %}
+                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <label for="smtp_use_tls" class="ml-2 block text-sm text-gray-700">Use TLS (recommended)</label>
+                </div>
+            </div>
+            <div class="mt-4 flex space-x-4">
+                <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
+                    Save SMTP Settings
+                </button>
+                {% if smtp.host %}
+                <button type="button"
+                    hx-post="/settings/test-smtp"
+                    hx-swap="innerHTML"
+                    hx-target="#test-result"
+                    class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-200">
+                    Test Connection
+                </button>
+                {% endif %}
+            </div>
+            <div id="test-result" class="mt-4"></div>
+        </form>
+    </div>
+
+    <!-- Account Info -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-5 border-b border-gray-200">
+            <h2 class="text-lg font-medium text-gray-900">Account</h2>
+        </div>
+        <div class="p-4 space-y-2">
+            <p class="text-sm"><span class="text-gray-500">Username:</span> {{ user.username }}</p>
+            <p class="text-sm"><span class="text-gray-500">Email:</span> {{ user.email }}</p>
+            <p class="text-sm"><span class="text-gray-500">Timezone:</span> {{ user.timezone }}</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

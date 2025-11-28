@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, Form, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.dependencies import CurrentUserOptional, DbSession, get_current_user_optional
-from app.models import Subscription, SubscriptionType
+from app.models import Delivery, Subscription, SubscriptionType
 from app.services import calibre, CalibreError
 from app.services.auth import (
     SESSION_COOKIE_NAME,
@@ -16,6 +17,7 @@ from app.services.auth import (
     create_user,
     user_count,
 )
+from app.services.smtp import SMTPConfig, SMTPError, verify_smtp_connection
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -349,3 +351,140 @@ async def subscription_delete(
         await db.commit()
 
     return RedirectResponse(url="/", status_code=302)
+
+
+# Settings routes
+
+
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(
+    request: Request,
+    db: DbSession,
+    user: CurrentUserOptional,
+    success: str | None = Query(None),
+    error: str | None = Query(None),
+):
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    smtp = user.smtp_config or {}
+
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+            "user": user,
+            "smtp": smtp,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@router.post("/settings")
+async def settings_update(
+    request: Request,
+    db: DbSession,
+    user: Annotated[CurrentUserOptional, Depends(get_current_user_optional)],
+    section: Annotated[str, Form()],
+    kindle_email: Annotated[str | None, Form()] = None,
+    smtp_host: Annotated[str | None, Form()] = None,
+    smtp_port: Annotated[int, Form()] = 587,
+    smtp_username: Annotated[str | None, Form()] = None,
+    smtp_password: Annotated[str | None, Form()] = None,
+    smtp_from_email: Annotated[str | None, Form()] = None,
+    smtp_use_tls: Annotated[bool, Form()] = False,
+):
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    if section == "kindle":
+        user.kindle_email = kindle_email
+        await db.commit()
+        return RedirectResponse(url="/settings?success=Kindle+email+saved", status_code=302)
+
+    elif section == "smtp":
+        # Keep existing password if not provided
+        existing_smtp = user.smtp_config or {}
+        password = smtp_password if smtp_password else existing_smtp.get("password")
+
+        if not password and not existing_smtp.get("password"):
+            return RedirectResponse(
+                url="/settings?error=Password+is+required", status_code=302
+            )
+
+        user.smtp_config = {
+            "host": smtp_host,
+            "port": smtp_port,
+            "username": smtp_username,
+            "password": password,
+            "from_email": smtp_from_email,
+            "use_tls": smtp_use_tls,
+        }
+        await db.commit()
+        return RedirectResponse(url="/settings?success=SMTP+settings+saved", status_code=302)
+
+    return RedirectResponse(url="/settings", status_code=302)
+
+
+@router.post("/settings/test-smtp", response_class=HTMLResponse)
+async def settings_test_smtp(
+    request: Request,
+    db: DbSession,
+    user: CurrentUserOptional,
+):
+    if not user:
+        return HTMLResponse('<span class="text-red-600">Not authenticated</span>')
+
+    if not user.smtp_config:
+        return HTMLResponse('<span class="text-red-600">SMTP not configured</span>')
+
+    try:
+        config = SMTPConfig.from_dict(user.smtp_config)
+        await verify_smtp_connection(config)
+        return HTMLResponse(
+            f'<span class="text-green-600">Connected successfully to {config.host}:{config.port}</span>'
+        )
+    except SMTPError as e:
+        return HTMLResponse(f'<span class="text-red-600">{e}</span>')
+
+
+# History route
+
+
+@router.get("/history", response_class=HTMLResponse)
+async def history_page(
+    request: Request,
+    db: DbSession,
+    user: CurrentUserOptional,
+    page: int = Query(1, ge=1),
+):
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    page_size = 20
+
+    result = await db.execute(
+        select(Delivery)
+        .options(selectinload(Delivery.subscription))
+        .where(Delivery.user_id == user.id)
+        .order_by(Delivery.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size + 1)  # Fetch one extra to check if there's more
+    )
+    deliveries = list(result.scalars().all())
+
+    has_more = len(deliveries) > page_size
+    if has_more:
+        deliveries = deliveries[:page_size]
+
+    return templates.TemplateResponse(
+        "history.html",
+        {
+            "request": request,
+            "user": user,
+            "deliveries": deliveries,
+            "page": page,
+            "has_more": has_more,
+        },
+    )

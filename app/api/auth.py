@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.dependencies import CurrentUser, DbSession, require_setup_incomplete
 from app.services.auth import (
@@ -27,14 +27,13 @@ class SetupRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     username: str
     email: str
     kindle_email: str | None
     timezone: str
-
-    class Config:
-        from_attributes = True
 
 
 @router.post("/login")

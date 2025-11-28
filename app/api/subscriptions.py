@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from app.dependencies import CurrentUser, DbSession
-from app.models import Subscription, SubscriptionType
+from app.dependencies import CurrentUser, DbSession, DeliveryEngineDep
+from app.models import Delivery, DeliveryStatus, Subscription, SubscriptionType
+from app.services.delivery import DeliveryConfigError
 
 router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
 
@@ -37,6 +39,8 @@ class SubscriptionUpdate(BaseModel):
 
 
 class SubscriptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     type: str
     source: str
@@ -47,9 +51,6 @@ class SubscriptionResponse(BaseModel):
     last_run_at: str | None
     last_status: str | None
     next_run_at: str | None
-
-    class Config:
-        from_attributes = True
 
 
 @router.get("")
@@ -232,3 +233,84 @@ async def toggle_subscription(
         last_status=subscription.last_status.value if subscription.last_status else None,
         next_run_at=subscription.next_run_at.isoformat() if subscription.next_run_at else None,
     )
+
+
+class SendNowResponse(BaseModel):
+    """Response model for Send Now action."""
+
+    delivery_id: int
+    status: str
+    message: str
+    error_stage: str | None = None
+    error_message: str | None = None
+
+
+@router.post("/{subscription_id}/send")
+async def send_now(
+    subscription_id: int,
+    user: CurrentUser,
+    db: DbSession,
+    engine: DeliveryEngineDep,
+) -> SendNowResponse:
+    """
+    Trigger immediate delivery for a subscription.
+
+    Executes the full delivery pipeline synchronously:
+    fetch -> generate EPUB -> send via email.
+    """
+    # Get subscription
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.id == subscription_id,
+            Subscription.user_id == user.id,
+        )
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subscription not found",
+        )
+
+    # Validate user configuration
+    if not user.kindle_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please configure your Kindle email address in settings first",
+        )
+
+    if not user.smtp_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please configure SMTP settings first",
+        )
+
+    try:
+        # Execute delivery
+        delivery_result = await engine.execute(
+            db=db,
+            subscription=subscription,
+            user=user,
+        )
+
+        if delivery_result.status == DeliveryStatus.SENT:
+            return SendNowResponse(
+                delivery_id=delivery_result.delivery_id,
+                status="sent",
+                message=f"'{subscription.name}' sent to {user.kindle_email}",
+            )
+        else:
+            return SendNowResponse(
+                delivery_id=delivery_result.delivery_id,
+                status="failed",
+                message=f"Delivery failed at {delivery_result.error_stage} stage",
+                error_stage=delivery_result.error_stage,
+                error_message=delivery_result.error_message,
+            )
+
+    except DeliveryConfigError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )

@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import User
 from app.services.auth import (
@@ -11,6 +12,8 @@ from app.services.auth import (
     get_user_by_id,
     user_count,
 )
+from app.services.calibre import calibre
+from app.services.delivery import DeliveryEngine
 
 
 async def get_current_user_optional(
@@ -56,3 +59,11 @@ async def require_setup_incomplete(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentUserOptional = Annotated[User | None, Depends(get_current_user_optional)]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+def get_delivery_engine() -> DeliveryEngine:
+    """Provide DeliveryEngine instance with configured Calibre wrapper."""
+    return DeliveryEngine(calibre=calibre, epub_dir=settings.epub_dir)
+
+
+DeliveryEngineDep = Annotated[DeliveryEngine, Depends(get_delivery_engine)]
