@@ -36,11 +36,14 @@ openssl rand -hex 32
 cp .env.example .env
 # Edit .env and add your SECRET_KEY
 
+# Initialize database (first time only)
+docker compose run --rm kindledrop uv run alembic upgrade head
+
 # Start the application
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 ```
 
 The application will be available at http://localhost:8000
@@ -90,8 +93,11 @@ cd kindledrop
 cp .env.example .env
 nano .env  # Add SECRET_KEY and configure settings
 
+# Initialize database (first time only)
+docker compose run --rm kindledrop uv run alembic upgrade head
+
 # Start the application
-docker-compose up -d
+docker compose up -d
 ```
 
 **Reverse Proxy (nginx):**
