@@ -255,6 +255,9 @@ class CalibreWrapper:
             str(output_path),
             # kindle_scribe profile works for Kindle Colorsoft (1264x1680 @ 300ppi)
             "--output-profile=kindle_scribe",
+            # Brand as Kindledrop so user knows the source on their Kindle
+            "--publisher=Kindledrop",
+            "--authors=Kindledrop",
         ]
 
         logger.info(f"Running Calibre: {' '.join(cmd)}")
@@ -427,6 +430,9 @@ class CustomRSSRecipe(BasicNewsRecipe):
             str(output_path),
             # kindle_scribe profile works for Kindle Colorsoft
             "--output-profile=kindle_scribe",
+            # Brand as Kindledrop so user knows the source on their Kindle
+            "--publisher=Kindledrop",
+            "--authors=Kindledrop",
         ]
 
         if not include_images:
