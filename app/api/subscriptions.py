@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from app.dependencies import CurrentUser, DbSession, DeliveryEngineDep
-from app.models import Delivery, DeliveryStatus, Subscription, SubscriptionType
+from app.models import DeliveryStatus, Subscription, SubscriptionType
 from app.services.delivery import DeliveryConfigError
+from app.services.scheduler import calculate_next_run
 
 router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
 
@@ -85,13 +85,22 @@ async def create_subscription(
     user: CurrentUser,
     db: DbSession,
 ) -> SubscriptionResponse:
+    schedule_dict = request.schedule.model_dump()
+
+    # Calculate initial next_run_at
+    next_run = calculate_next_run(
+        schedule=schedule_dict,
+        timezone=user.timezone,
+    )
+
     subscription = Subscription(
         user_id=user.id,
         type=request.type,
         source=request.source,
         name=request.name,
-        schedule=request.schedule.model_dump(),
+        schedule=schedule_dict,
         settings=request.settings.model_dump(),
+        next_run_at=next_run,
     )
     db.add(subscription)
     await db.flush()
@@ -107,7 +116,7 @@ async def create_subscription(
         settings=subscription.settings,
         last_run_at=None,
         last_status=None,
-        next_run_at=None,
+        next_run_at=subscription.next_run_at.isoformat() if subscription.next_run_at else None,
     )
 
 
@@ -162,6 +171,13 @@ async def update_subscription(
         subscription.name = request.name
     if request.schedule is not None:
         subscription.schedule = request.schedule.model_dump()
+        # Recalculate next_run_at when schedule changes
+        subscription.next_run_at = calculate_next_run(
+            schedule=subscription.schedule,
+            timezone=user.timezone,
+            last_run_at=subscription.last_run_at,
+            created_at=subscription.created_at,
+        )
     if request.settings is not None:
         subscription.settings = request.settings.model_dump()
 
@@ -218,6 +234,16 @@ async def toggle_subscription(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     subscription.enabled = not subscription.enabled
+
+    # When enabling, recalculate next_run_at in case it was stale
+    if subscription.enabled:
+        subscription.next_run_at = calculate_next_run(
+            schedule=subscription.schedule,
+            timezone=user.timezone,
+            last_run_at=subscription.last_run_at,
+            created_at=subscription.created_at,
+        )
+
     await db.flush()
     await db.refresh(subscription)
 

@@ -1,16 +1,14 @@
 """Tests for SMTP service."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+
+import pytest
 
 from app.services.smtp import (
+    MAX_FILE_SIZE,
     SMTPConfig,
     SMTPError,
-    SMTPAuthError,
-    SMTPConnectionError,
     SMTPSizeError,
-    MAX_FILE_SIZE,
     send_kindle_email,
     verify_smtp_connection,
 )

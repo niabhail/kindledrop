@@ -139,7 +139,6 @@ async def test_subscription(db_session: AsyncSession, test_user):
 def mock_calibre_fetch(tmp_path):
     """Mock Calibre fetch operations that create real files."""
     from pathlib import Path
-    from unittest.mock import AsyncMock
 
     # Create a fake EPUB file
     fake_epub = tmp_path / "test.epub"

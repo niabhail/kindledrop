@@ -29,6 +29,13 @@
                             {% if sub.schedule.type == 'weekly' %}on {{ sub.schedule.days | join(', ') }} at {{ sub.schedule.time }}{% endif %}
                             {% if sub.schedule.type == 'interval' %}every {{ sub.schedule.interval_hours }}h{% endif %}
                         </p>
+                        {% if sub.next_run_at and sub.enabled %}
+                        <p class="text-xs text-indigo-600">
+                            Next: {{ sub.next_run_at.strftime('%b %d, %H:%M') }} UTC
+                        </p>
+                        {% elif sub.schedule.type == 'manual' %}
+                        <p class="text-xs text-gray-400">Manual only</p>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">

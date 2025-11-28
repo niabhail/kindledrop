@@ -23,16 +23,17 @@ Self-hosted news delivery service for Kindle. Uses Calibre CLI for EPUB generati
 - Mock external services (Calibre, SMTP)
 
 ## Current Phase
-Phase 1 complete. Foundation laid:
-- User auth (login/session)
-- Subscription CRUD
-- Recipe browser
-- Basic UI
-
-## Next Phase (Phase 2)
+Phase 3 complete. Scheduling working:
 - Delivery engine (fetch → generate → email)
-- APScheduler integration
-- SMTP sending
+- SMTP integration with size validation
+- APScheduler with polling job architecture
+- Automatic scheduled deliveries (daily, weekly, interval)
+- Timezone-aware scheduling
+
+## Next Phase (Phase 4)
+- Calibre configuration UI
+- Custom recipe management
+- User-uploadable .recipe files
 
 ## Commands
 
@@ -52,6 +53,9 @@ uv run alembic upgrade head
 
 ## Key Files
 - `app/services/calibre.py` - Calibre CLI wrapper
+- `app/services/delivery.py` - Delivery engine (fetch → generate → email)
+- `app/services/smtp.py` - Email sending with size validation
+- `app/services/scheduler.py` - APScheduler service (polling job)
 - `app/services/auth.py` - Authentication logic
 - `app/models/` - Database models
 - `app/ui/routes.py` - All HTML page routes

@@ -1,17 +1,14 @@
 """Tests for Delivery Engine service."""
 
+from unittest.mock import patch
+
 import pytest
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.models import DeliveryStatus, SubscriptionStatus
 from app.services.delivery import (
+    DeliveryConfigError,
     DeliveryEngine,
     DeliveryResult,
-    DeliveryError,
-    DeliveryConfigError,
-    DeliverySizeError,
 )
 
 
@@ -105,7 +102,7 @@ class TestDeliveryEngine:
         self, db_session, test_user, test_subscription, mock_smtp, tmp_path
     ):
         """Test handling of Calibre failure."""
-        from app.services.calibre import calibre, CalibreError
+        from app.services.calibre import CalibreError, calibre
 
         engine = DeliveryEngine(calibre=calibre, epub_dir=tmp_path)
 
@@ -125,6 +122,7 @@ class TestDeliveryEngine:
     ):
         """Test that delivery creates a Delivery record in database."""
         from sqlalchemy import select
+
         from app.models import Delivery
         from app.services.calibre import calibre
 

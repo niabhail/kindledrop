@@ -9,16 +9,22 @@
 │                                                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
 │  │   FastAPI    │    │  APScheduler │    │   SQLite     │  │
-│  │   (Web UI    │◄──►│  (Job Queue) │◄──►│   (Data)     │  │
-│  │   + API)     │    │   Phase 2    │    │              │  │
+│  │   (Web UI    │◄──►│  (Polling    │◄──►│   (Data)     │  │
+│  │   + API)     │    │   Job)       │    │              │  │
 │  └──────┬───────┘    └──────────────┘    └──────────────┘  │
-│         │                                                   │
-│         ▼                                                   │
-│  ┌──────────────┐    ┌──────────────┐                      │
-│  │   Calibre    │───►│    SMTP      │                      │
-│  │   Wrapper    │    │   Client     │                      │
-│  └──────────────┘    │   Phase 2    │                      │
-│                      └──────────────┘                      │
+│         │                   │                               │
+│         │                   ▼                               │
+│         │            ┌──────────────┐                      │
+│         └───────────►│  Delivery    │                      │
+│                      │  Engine      │                      │
+│                      └──────┬───────┘                      │
+│                             │                               │
+│         ┌───────────────────┼───────────────────┐          │
+│         ▼                   ▼                   ▼          │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │   Calibre    │    │   SMTP       │    │   Kindle     │  │
+│  │   Wrapper    │    │   Client     │───►│   Device     │  │
+│  └──────────────┘    └──────────────┘    └──────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -37,14 +43,17 @@
 
 ```
 app/
-├── main.py           # FastAPI app entry
+├── main.py           # FastAPI app entry + lifespan hooks
 ├── config.py         # Pydantic settings
 ├── database.py       # SQLAlchemy async setup
 ├── dependencies.py   # FastAPI dependencies
 ├── models/           # SQLAlchemy ORM models
 ├── services/         # Business logic
 │   ├── auth.py       # Authentication
-│   └── calibre.py    # Calibre CLI wrapper
+│   ├── calibre.py    # Calibre CLI wrapper
+│   ├── delivery.py   # Delivery engine pipeline
+│   ├── scheduler.py  # APScheduler polling job
+│   └── smtp.py       # Email sending
 ├── api/              # JSON API endpoints
 └── ui/               # HTML routes
 ```
@@ -56,6 +65,13 @@ Calibre CLI runs via `asyncio.create_subprocess_exec` to avoid blocking the even
 
 ### Database as Source of Truth
 Subscriptions and schedules stored in SQLite. No in-memory state.
+
+### Polling Job Scheduler
+APScheduler runs a single polling job every 60 seconds that queries `next_run_at <= now()`.
+- Database is source of truth (no sync issues)
+- Subscription changes are instant (no job recreation)
+- Skips missed deliveries on restart (content is fetched live)
+- Max 3 concurrent deliveries via semaphore
 
 ### Signed Cookie Sessions
 Stateless sessions via `itsdangerous.URLSafeTimedSerializer`. No server-side session storage.

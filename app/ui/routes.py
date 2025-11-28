@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.dependencies import CurrentUserOptional, DbSession, get_current_user_optional
 from app.models import Delivery, Subscription, SubscriptionType
-from app.services import calibre, CalibreError
+from app.services import CalibreError, calibre
 from app.services.auth import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE,
@@ -17,6 +17,7 @@ from app.services.auth import (
     create_user,
     user_count,
 )
+from app.services.scheduler import calculate_next_run
 from app.services.smtp import SMTPConfig, SMTPError, verify_smtp_connection
 
 router = APIRouter()
@@ -244,17 +245,26 @@ async def subscription_create(
             status_code=400,
         )
 
+    schedule_dict = {"type": schedule_type, "time": schedule_time}
+
+    # Calculate initial next_run_at
+    next_run = calculate_next_run(
+        schedule=schedule_dict,
+        timezone=user.timezone,
+    )
+
     subscription = Subscription(
         user_id=user.id,
         type=SubscriptionType.RECIPE if type == "recipe" else SubscriptionType.RSS,
         source=source,
         name=name,
-        schedule={"type": schedule_type, "time": schedule_time},
+        schedule=schedule_dict,
         settings={
             "max_articles": max_articles,
             "oldest_days": oldest_days,
             "include_images": include_images,
         },
+        next_run_at=next_run,
     )
     db.add(subscription)
     await db.commit()
@@ -319,12 +329,22 @@ async def subscription_update(
         return RedirectResponse(url="/", status_code=302)
 
     subscription.name = name
-    subscription.schedule = {"type": schedule_type, "time": schedule_time}
+    schedule_dict = {"type": schedule_type, "time": schedule_time}
+    subscription.schedule = schedule_dict
     subscription.settings = {
         "max_articles": max_articles,
         "oldest_days": oldest_days,
         "include_images": include_images,
     }
+
+    # Recalculate next_run_at when schedule changes
+    subscription.next_run_at = calculate_next_run(
+        schedule=schedule_dict,
+        timezone=user.timezone,
+        last_run_at=subscription.last_run_at,
+        created_at=subscription.created_at,
+    )
+
     await db.commit()
 
     return RedirectResponse(url="/", status_code=302)
