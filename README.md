@@ -94,10 +94,13 @@ cp .env.example .env
 nano .env  # Add SECRET_KEY and configure settings
 
 # Initialize database (first time only)
-docker compose run --rm kindledrop uv run alembic upgrade head
+docker compose -f docker-compose.prod.yml run --rm kindledrop uv run alembic upgrade head
 
 # Start the application
-docker compose up -d
+docker compose -f docker-compose.prod.yml up -d
+
+# View logs
+docker compose -f docker-compose.prod.yml logs -f
 ```
 
 **Reverse Proxy (nginx):**
