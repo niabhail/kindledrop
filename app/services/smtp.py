@@ -15,8 +15,9 @@ import aiosmtplib
 
 logger = logging.getLogger(__name__)
 
-# 14MB limit (safe margin under Mailjet's 15MB)
-MAX_FILE_SIZE = 14 * 1024 * 1024
+# 11MB limit - Mailjet allows 15MB total, base64 adds ~33% overhead
+# This gives us ~11MB effective attachment size
+MAX_FILE_SIZE = 11 * 1024 * 1024
 
 
 class SMTPError(Exception):
@@ -83,7 +84,7 @@ async def send_kindle_email(
         epub_path: Path to EPUB file to attach
 
     Raises:
-        SMTPSizeError: If file exceeds 14MB limit
+        SMTPSizeError: If file exceeds 7MB limit
         SMTPConnectionError: If cannot connect to SMTP server
         SMTPAuthError: If authentication fails
         SMTPError: For other sending errors
@@ -96,7 +97,7 @@ async def send_kindle_email(
     file_size = epub_path.stat().st_size
     if file_size > MAX_FILE_SIZE:
         raise SMTPSizeError(
-            f"File too large: {file_size / 1024 / 1024:.1f}MB exceeds 14MB limit"
+            f"File too large: {file_size / 1024 / 1024:.1f}MB exceeds 11MB limit"
         )
 
     # Build email message

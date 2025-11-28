@@ -27,23 +27,29 @@
                         <div class="text-sm font-medium text-gray-900">{{ d.subscription.name if d.subscription else 'Deleted' }}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        {% if d.status.value == 'sent' %}
+                        {% set status_val = d.status.value if d.status.value is defined else d.status %}
+                        {% if status_val == 'sent' %}
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                             Sent
                         </span>
-                        {% elif d.status.value == 'failed' %}
+                        {% elif status_val == 'failed' %}
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800"
                               title="{{ d.error_message or '' }}">
                             Failed
                             {% if d.error_stage %}({{ d.error_stage }}){% endif %}
                         </span>
-                        {% elif d.status.value == 'pending' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                        {% elif status_val == 'pending' %}
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
                             Pending
+                        </span>
+                        {% elif status_val == 'skipped' %}
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800"
+                              title="{{ d.error_message or 'Already sent today' }}">
+                            Skipped
                         </span>
                         {% else %}
                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                            {{ d.status.value | capitalize }}
+                            {{ status_val | capitalize }}
                         </span>
                         {% endif %}
                     </td>
@@ -58,18 +64,33 @@
                         {{ d.created_at.strftime('%Y-%m-%d %H:%M') }}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        {% if d.status.value == 'failed' and d.subscription %}
+                        {% if status_val == 'failed' and d.subscription %}
                         <button
-                            hx-post="/api/deliveries/{{ d.id }}/retry"
-                            hx-swap="outerHTML"
-                            hx-target="closest tr"
+                            hx-post="/subscriptions/{{ d.subscription_id }}/send"
+                            hx-swap="innerHTML"
+                            hx-target="#retry-hist-{{ d.id }}"
+                            hx-indicator="#retry-hist-spinner-{{ d.id }}"
                             class="text-indigo-600 hover:text-indigo-900">
                             Retry
+                            <span id="retry-hist-spinner-{{ d.id }}" class="htmx-indicator">...</span>
                         </button>
+                        <span id="retry-hist-{{ d.id }}" class="text-xs ml-2"></span>
+                        {% elif status_val == 'skipped' and d.subscription %}
+                        <button
+                            hx-post="/subscriptions/{{ d.subscription_id }}/force-send"
+                            hx-swap="innerHTML"
+                            hx-target="#force-hist-{{ d.id }}"
+                            hx-indicator="#force-hist-spinner-{{ d.id }}"
+                            hx-confirm="Send anyway, even though already delivered today?"
+                            class="text-yellow-600 hover:text-yellow-800">
+                            Force Send
+                            <span id="force-hist-spinner-{{ d.id }}" class="htmx-indicator">...</span>
+                        </button>
+                        <span id="force-hist-{{ d.id }}" class="text-xs ml-2"></span>
                         {% endif %}
                     </td>
                 </tr>
-                {% if d.error_message %}
+                {% if status_val == 'failed' and d.error_message %}
                 <tr class="bg-red-50">
                     <td colspan="5" class="px-6 py-2 text-xs text-red-700">
                         {{ d.error_message }}

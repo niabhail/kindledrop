@@ -8,14 +8,25 @@
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div class="flex flex-wrap gap-2">
+            {% if health.active > 0 %}
             <button
                 hx-post="/api/subscriptions/pause-all"
-                hx-confirm="Pause all subscriptions?"
+                hx-confirm="Pause all {{ health.active }} active subscriptions?"
                 hx-swap="none"
                 hx-on::after-request="window.location.reload()"
-                class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-yellow-700 bg-yellow-50 hover:bg-yellow-100">
                 Pause All
             </button>
+            {% else %}
+            <button
+                hx-post="/api/subscriptions/resume-all"
+                hx-confirm="Resume all paused subscriptions?"
+                hx-swap="none"
+                hx-on::after-request="window.location.reload()"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100">
+                Resume All
+            </button>
+            {% endif %}
             <button
                 hx-post="/api/recipes/refresh"
                 hx-swap="none"
@@ -45,7 +56,13 @@
         </div>
         <div class="bg-white rounded-lg shadow p-4">
             <p class="text-sm font-medium text-gray-500">Deliveries Today</p>
-            <p class="mt-1 text-3xl font-semibold text-gray-900">{{ stats.total_today }}</p>
+            <p class="mt-1 text-2xl font-semibold">
+                <span class="text-green-600">{{ stats.successful_today }}</span>
+                <span class="text-gray-300 mx-1">|</span>
+                <span class="text-yellow-500">{{ stats.skipped_today }}</span>
+                <span class="text-gray-300 mx-1">|</span>
+                <span class="text-red-600">{{ stats.failed_today }}</span>
+            </p>
         </div>
         <div class="bg-white rounded-lg shadow p-4">
             <p class="text-sm font-medium text-gray-500">Success Rate</p>
@@ -81,14 +98,24 @@
                                 <span class="text-red-600 text-xs block">{{ fs.last_error | truncate(80) }}</span>
                                 {% endif %}
                             </span>
-                            <button
-                                hx-post="/api/subscriptions/{{ fs.id }}/send"
-                                hx-swap="none"
-                                hx-indicator="#retry-{{ fs.id }}"
-                                class="text-red-800 hover:text-red-900 text-sm font-medium underline">
-                                Retry
-                                <span id="retry-{{ fs.id }}" class="htmx-indicator">...</span>
-                            </button>
+                            <span class="flex items-center space-x-3">
+                                <button
+                                    hx-post="/api/subscriptions/{{ fs.id }}/send"
+                                    hx-swap="none"
+                                    hx-indicator="#retry-{{ fs.id }}"
+                                    hx-on::after-request="window.location.reload()"
+                                    class="text-red-800 hover:text-red-900 text-sm font-medium underline">
+                                    Retry
+                                    <span id="retry-{{ fs.id }}" class="htmx-indicator">...</span>
+                                </button>
+                                <button
+                                    hx-post="/api/subscriptions/{{ fs.id }}/dismiss-alert"
+                                    hx-swap="none"
+                                    hx-on::after-request="window.location.reload()"
+                                    class="text-gray-500 hover:text-gray-700 text-sm">
+                                    Dismiss
+                                </button>
+                            </span>
                         </li>
                         {% endfor %}
                     </ul>
@@ -110,7 +137,7 @@
                 <h2 class="text-lg font-medium text-gray-900">Upcoming (24h)</h2>
                 <span class="text-xs text-gray-400">Auto-refreshes</span>
             </div>
-            <div id="upcoming-content">
+            <div id="upcoming-content" class="max-h-80 overflow-y-auto">
                 {% include "components/upcoming_deliveries.html" %}
             </div>
         </div>
@@ -125,7 +152,7 @@
                 <h2 class="text-lg font-medium text-gray-900">Recent Activity</h2>
                 <a href="/history" class="text-xs text-indigo-600 hover:text-indigo-800">View all</a>
             </div>
-            <div id="recent-content">
+            <div id="recent-content" class="max-h-80 overflow-y-auto">
                 {% include "components/recent_activity.html" %}
             </div>
         </div>
@@ -138,50 +165,61 @@
             <h2 class="text-lg font-medium text-gray-900">All Subscriptions</h2>
             <span class="text-sm text-gray-500">{{ subscriptions | length }} total</span>
         </div>
-        <ul class="divide-y divide-gray-200">
+        <ul class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
             {% for sub in subscriptions %}
-            <li class="px-4 py-4 flex items-center justify-between hover:bg-gray-50">
-                <div class="flex items-center space-x-4">
-                    <span class="w-2 h-2 rounded-full {% if sub.enabled %}bg-green-500{% else %}bg-gray-300{% endif %}"></span>
-                    <div>
-                        <p class="text-sm font-medium text-gray-900">{{ sub.name }}</p>
-                        <p class="text-xs text-gray-500">
-                            {{ sub.schedule.type | capitalize }}
-                            {% if sub.schedule.type == 'daily' %}at {{ sub.schedule.time }}{% endif %}
-                            {% if sub.schedule.type == 'weekly' %}on {{ sub.schedule.days | join(', ') }} at {{ sub.schedule.time }}{% endif %}
-                            {% if sub.schedule.type == 'interval' %}every {{ sub.schedule.interval_hours }}h{% endif %}
-                        </p>
-                        {% if sub.next_run_at and sub.enabled %}
-                        <p class="text-xs text-indigo-600">
-                            Next: {{ sub.next_run_at.strftime('%b %d, %H:%M') }} UTC
-                        </p>
-                        {% elif sub.schedule.type == 'manual' %}
-                        <p class="text-xs text-gray-400">Manual only</p>
+            <li class="px-4 py-4 hover:bg-gray-50">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <span class="w-2 h-2 rounded-full {% if sub.enabled %}bg-green-500{% else %}bg-gray-300{% endif %}"></span>
+                        <div>
+                            <p class="text-sm font-medium text-gray-900">{{ sub.name }}</p>
+                            <p class="text-xs text-gray-500">
+                                {{ sub.schedule.type | capitalize }}
+                                {% if sub.schedule.type == 'daily' %}at {{ sub.schedule.time }}{% endif %}
+                                {% if sub.schedule.type == 'weekly' %}on {{ sub.schedule.days | join(', ') }} at {{ sub.schedule.time }}{% endif %}
+                                {% if sub.schedule.type == 'interval' %}every {{ sub.schedule.interval_hours }}h{% endif %}
+                            </p>
+                            {% if sub.next_run_at and sub.enabled %}
+                            <p class="text-xs text-indigo-600">
+                                Next: {{ sub.next_run_at.strftime('%b %d, %H:%M') }} UTC
+                            </p>
+                            {% elif sub.schedule.type == 'manual' %}
+                            <p class="text-xs text-gray-400">Manual only</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2 flex-shrink-0">
+                        {% if sub.last_status %}
+                        <span class="px-2 py-1 text-xs rounded-full {% if sub.last_status.value == 'success' %}bg-green-100 text-green-800{% elif sub.last_status.value == 'failed' %}bg-red-100 text-red-800{% else %}bg-gray-100 text-gray-800{% endif %}">
+                            {{ sub.last_status.value }}
+                        </span>
                         {% endif %}
+                        <button
+                            hx-post="/api/subscriptions/{{ sub.id }}/toggle"
+                            hx-swap="none"
+                            hx-on::after-request="window.location.reload()"
+                            class="text-sm font-medium {% if sub.enabled %}text-yellow-600 hover:text-yellow-800{% else %}text-green-600 hover:text-green-800{% endif %}">
+                            {% if sub.enabled %}Pause{% else %}Resume{% endif %}
+                        </button>
+                        <span class="text-gray-300">|</span>
+                        <button
+                            hx-post="/subscriptions/{{ sub.id }}/send"
+                            hx-swap="innerHTML"
+                            hx-target="#send-result-{{ sub.id }}"
+                            hx-indicator="#send-spinner-{{ sub.id }}"
+                            class="text-indigo-600 hover:text-indigo-800 text-sm font-medium whitespace-nowrap">
+                            Send
+                            <span id="send-spinner-{{ sub.id }}" class="htmx-indicator">...</span>
+                        </button>
+                        <a href="/subscriptions/{{ sub.id }}/edit" class="text-gray-400 hover:text-gray-600 flex-shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                        </a>
                     </div>
                 </div>
-                <div class="flex items-center space-x-2">
-                    {% if sub.last_status %}
-                    <span class="px-2 py-1 text-xs rounded-full {% if sub.last_status.value == 'success' %}bg-green-100 text-green-800{% elif sub.last_status.value == 'failed' %}bg-red-100 text-red-800{% else %}bg-gray-100 text-gray-800{% endif %}">
-                        {{ sub.last_status.value }}
-                    </span>
-                    {% endif %}
-                    <button
-                        hx-post="/api/subscriptions/{{ sub.id }}/send"
-                        hx-swap="innerHTML"
-                        hx-target="#send-result-{{ sub.id }}"
-                        hx-indicator="#send-spinner-{{ sub.id }}"
-                        class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
-                        Send
-                        <span id="send-spinner-{{ sub.id }}" class="htmx-indicator">...</span>
-                    </button>
-                    <span id="send-result-{{ sub.id }}" class="text-xs"></span>
-                    <a href="/subscriptions/{{ sub.id }}/edit" class="text-gray-400 hover:text-gray-600">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                        </svg>
-                    </a>
-                </div>
+                <!-- Send result appears below the main row -->
+                <div id="send-result-{{ sub.id }}" class="text-xs mt-2 text-right"></div>
             </li>
             {% endfor %}
         </ul>

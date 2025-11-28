@@ -10,16 +10,18 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import async_session_factory
-from app.models import Subscription, User
+from app.models import Delivery, Subscription, User
 from app.services.delivery import DeliveryEngine
 
 logger = logging.getLogger(__name__)
@@ -221,11 +223,24 @@ class SchedulerService:
             max_instances=1,  # Don't overlap polling runs
         )
 
+        # Add the daily cleanup job (runs at 3 AM UTC)
+        self.scheduler.add_job(
+            self._cleanup_retention,
+            trigger=CronTrigger(hour=3, minute=0),
+            id="cleanup_retention",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         self.scheduler.start()
         self._running = True
         logger.info(
             f"Scheduler started: polling every {settings.scheduler_poll_interval}s, "
             f"max {settings.scheduler_max_concurrent} concurrent deliveries"
+        )
+        logger.info(
+            f"Retention cleanup: EPUBs after {settings.epub_retention_hours}h, "
+            f"records after {settings.delivery_retention_days} days"
         )
 
     async def stop(self) -> None:
@@ -378,3 +393,63 @@ class SchedulerService:
                     logger.exception(
                         f"Error in scheduled delivery for subscription {subscription.id}: {e}"
                     )
+
+    async def _cleanup_retention(self) -> None:
+        """
+        Clean up old EPUB files and delivery records.
+
+        - EPUB files: deleted after epub_retention_hours (default 24h)
+        - Delivery records: deleted after delivery_retention_days (default 30 days)
+
+        Files are cleaned first so records can be deleted without orphaning references.
+        """
+        now = datetime.now(dt_timezone.utc)
+        epub_cutoff = now - timedelta(hours=settings.epub_retention_hours)
+        record_cutoff = now - timedelta(days=settings.delivery_retention_days)
+
+        files_deleted = 0
+        records_deleted = 0
+
+        async with async_session_factory() as db:
+            try:
+                # 1. Clean up EPUB files older than retention period
+                # Find deliveries with file_path that are old enough to clean
+                result = await db.execute(
+                    select(Delivery).where(
+                        Delivery.file_path.isnot(None),
+                        Delivery.completed_at < epub_cutoff,
+                    )
+                )
+                old_deliveries = result.scalars().all()
+
+                for delivery in old_deliveries:
+                    if delivery.file_path:
+                        file_path = Path(delivery.file_path)
+                        if file_path.exists():
+                            try:
+                                file_path.unlink()
+                                files_deleted += 1
+                                logger.debug(f"Deleted EPUB: {file_path}")
+                            except OSError as e:
+                                logger.warning(f"Failed to delete {file_path}: {e}")
+
+                        # Clear file_path so we don't try to delete again
+                        delivery.file_path = None
+
+                await db.commit()
+
+                # 2. Delete old delivery records (older than retention period)
+                result = await db.execute(
+                    delete(Delivery).where(Delivery.created_at < record_cutoff)
+                )
+                records_deleted = result.rowcount
+                await db.commit()
+
+                if files_deleted > 0 or records_deleted > 0:
+                    logger.info(
+                        f"Retention cleanup: {files_deleted} EPUB files deleted, "
+                        f"{records_deleted} delivery records deleted"
+                    )
+
+            except Exception as e:
+                logger.exception(f"Error during retention cleanup: {e}")

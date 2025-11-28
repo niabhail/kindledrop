@@ -1,3 +1,4 @@
+import html
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -8,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import CurrentUserOptional, DbSession, get_current_user_optional
+from app.dependencies import CurrentUserOptional, DbSession, DeliveryEngineDep, get_current_user_optional
 from app.models import Delivery, DeliveryStatus, Subscription, SubscriptionType
 from app.services import CalibreError, calibre
 from app.services.auth import (
@@ -39,6 +40,7 @@ class DailyStats:
     total_today: int
     successful_today: int
     failed_today: int
+    skipped_today: int
 
 
 @dataclass
@@ -51,6 +53,7 @@ class RecentDeliveryItem:
     error_message: str | None
     file_size_kb: float | None
     article_count: int | None
+    subscription_id: int | None = None
 
 
 @dataclass
@@ -78,11 +81,17 @@ async def get_dashboard_data(db: DbSession, user_id: int):
     all_subs = all_subs_result.scalars().all()
 
     # Upcoming deliveries (next 24 hours)
+    # Handle naive datetimes from SQLite by assuming UTC
+    def make_aware(dt):
+        if dt and dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
     upcoming = [
         s for s in all_subs
-        if s.enabled and s.next_run_at and s.next_run_at <= next_24h
+        if s.enabled and s.next_run_at and make_aware(s.next_run_at) <= next_24h
     ]
-    upcoming.sort(key=lambda s: s.next_run_at or now)
+    upcoming.sort(key=lambda s: make_aware(s.next_run_at) or now)
 
     # Recent deliveries (last 10)
     recent_result = await db.execute(
@@ -102,6 +111,7 @@ async def get_dashboard_data(db: DbSession, user_id: int):
             error_message=d.error_message,
             file_size_kb=d.file_size_bytes / 1024 if d.file_size_bytes else None,
             article_count=d.article_count,
+            subscription_id=d.subscription_id,
         )
         for d, name in recent_rows
     ]
@@ -124,7 +134,9 @@ async def get_dashboard_data(db: DbSession, user_id: int):
             else:
                 break
 
-        if consecutive_failures >= 2:
+        # Only show in "Needs Attention" if failures exist AND last_error is set
+        # (dismiss clears last_error, hiding the alert)
+        if consecutive_failures >= 2 and sub.last_error:
             failing_subs.append(FailingSub(
                 id=sub.id,
                 name=sub.name,
@@ -161,11 +173,19 @@ async def get_dashboard_data(db: DbSession, user_id: int):
             Delivery.status == DeliveryStatus.FAILED,
         )
     )
+    skipped_today_result = await db.execute(
+        select(func.count(Delivery.id)).where(
+            Delivery.user_id == user_id,
+            Delivery.created_at >= today_start,
+            Delivery.status == DeliveryStatus.SKIPPED,
+        )
+    )
 
     stats = DailyStats(
         total_today=total_today_result.scalar() or 0,
         successful_today=successful_today_result.scalar() or 0,
         failed_today=failed_today_result.scalar() or 0,
+        skipped_today=skipped_today_result.scalar() or 0,
     )
 
     return all_subs, upcoming, recent, health, stats
@@ -257,6 +277,7 @@ async def dashboard_recent(
             error_message=d.error_message,
             file_size_kb=d.file_size_bytes / 1024 if d.file_size_bytes else None,
             article_count=d.article_count,
+            subscription_id=d.subscription_id,
         )
         for d, name in recent_rows
     ]
@@ -363,13 +384,13 @@ async def recipes_browser(
     db: DbSession,
     user: CurrentUserOptional,
     search: str | None = Query(None),
-    language: str | None = Query(None),
+    letter: str | None = Query(None),
     page: int = Query(1, ge=1),
 ):
     if not user:
         return RedirectResponse(url="/login", status_code=302)
 
-    page_size = 20
+    page_size = 50
     recipes = []
     total = 0
 
@@ -380,8 +401,12 @@ async def recipes_browser(
         if search:
             search_lower = search.lower()
             filtered = [r for r in filtered if search_lower in r.title.lower()]
-        if language:
-            filtered = [r for r in filtered if r.language == language.lower()]
+        if letter:
+            if letter == "#":
+                # Non-alphabetic (numbers, symbols)
+                filtered = [r for r in filtered if r.title and not r.title[0].isalpha()]
+            else:
+                filtered = [r for r in filtered if r.title and r.title[0].upper() == letter.upper()]
 
         total = len(filtered)
         start = (page - 1) * page_size
@@ -400,7 +425,7 @@ async def recipes_browser(
             "page": page,
             "page_size": page_size,
             "search": search,
-            "language": language,
+            "letter": letter,
         },
     )
 
@@ -587,6 +612,100 @@ async def subscription_delete(
         await db.commit()
 
     return RedirectResponse(url="/", status_code=302)
+
+
+@router.post("/subscriptions/{subscription_id}/send", response_class=HTMLResponse)
+async def subscription_send(
+    subscription_id: int,
+    db: DbSession,
+    user: Annotated[CurrentUserOptional, Depends(get_current_user_optional)],
+    engine: DeliveryEngineDep,
+):
+    """Send a subscription now and return HTML snippet for htmx."""
+    if not user:
+        return "<span class='text-red-600'>Not logged in</span>"
+
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.id == subscription_id,
+            Subscription.user_id == user.id,
+        )
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        return "<span class='text-red-600'>Not found</span>"
+
+    if not user.kindle_email:
+        return "<span class='text-red-600'>Set Kindle email first</span>"
+
+    if not user.smtp_config:
+        return "<span class='text-red-600'>Configure SMTP first</span>"
+
+    try:
+        delivery_result = await engine.execute(
+            db=db,
+            subscription=subscription,
+            user=user,
+        )
+
+        if delivery_result.status == DeliveryStatus.SENT:
+            return "<span class='text-green-600'>Sent!</span>"
+        elif delivery_result.status == DeliveryStatus.SKIPPED:
+            return "<span class='text-yellow-600'>Skipped (already sent today)</span>"
+        else:
+            # Show full error since result now has its own row
+            error = delivery_result.error_message or "Unknown error"
+            return f"<span class='text-red-600'>Failed: {html.escape(error)}</span>"
+
+    except Exception as e:
+        return f"<span class='text-red-600'>Error: {html.escape(str(e))}</span>"
+
+
+@router.post("/subscriptions/{subscription_id}/force-send", response_class=HTMLResponse)
+async def subscription_force_send(
+    subscription_id: int,
+    db: DbSession,
+    user: Annotated[CurrentUserOptional, Depends(get_current_user_optional)],
+    engine: DeliveryEngineDep,
+):
+    """Force send a subscription, bypassing same-day duplicate check."""
+    if not user:
+        return "<span class='text-red-600'>Not logged in</span>"
+
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.id == subscription_id,
+            Subscription.user_id == user.id,
+        )
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        return "<span class='text-red-600'>Not found</span>"
+
+    if not user.kindle_email:
+        return "<span class='text-red-600'>Set Kindle email first</span>"
+
+    if not user.smtp_config:
+        return "<span class='text-red-600'>Configure SMTP first</span>"
+
+    try:
+        delivery_result = await engine.execute(
+            db=db,
+            subscription=subscription,
+            user=user,
+            force=True,  # Skip duplicate check
+        )
+
+        if delivery_result.status == DeliveryStatus.SENT:
+            return "<span class='text-green-600'>Sent!</span>"
+        else:
+            error = delivery_result.error_message or "Unknown error"
+            return f"<span class='text-red-600'>Failed: {html.escape(error)}</span>"
+
+    except Exception as e:
+        return f"<span class='text-red-600'>Error: {html.escape(str(e))}</span>"
 
 
 # Settings routes

@@ -17,11 +17,12 @@ SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # bcrypt has a 72-byte limit; truncate to avoid errors with bcrypt 4.0+
+    return pwd_context.hash(password[:72])
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return pwd_context.verify(plain_password[:72], hashed_password)
 
 
 def create_session_token(user_id: int) -> str:

@@ -2,12 +2,102 @@ import asyncio
 import hashlib
 import logging
 import re
+import zipfile
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Size thresholds for compression (in bytes)
+COMPRESSION_THRESHOLD_HIGH = 8 * 1024 * 1024   # 8MB - aggressive compression
+COMPRESSION_THRESHOLD_MED = 5 * 1024 * 1024    # 5MB - moderate compression
+MAX_EMAIL_SIZE = 11 * 1024 * 1024              # 11MB - Mailjet limit with base64 overhead
+
+
+def compress_epub_images(
+    epub_path: Path,
+    quality: int = 60,
+    max_size: tuple[int, int] = (800, 1200),
+) -> int:
+    """
+    Compress images in an EPUB file to reduce file size.
+
+    EPUB is a ZIP file containing HTML and images. This function:
+    1. Extracts the EPUB
+    2. Compresses each image with Pillow (lossy JPEG)
+    3. Repacks the EPUB
+
+    Args:
+        epub_path: Path to the EPUB file (modified in-place)
+        quality: JPEG quality (1-100, lower = smaller file)
+        max_size: Maximum image dimensions (width, height)
+
+    Returns:
+        Bytes saved by compression
+    """
+    # Read all files from EPUB
+    with zipfile.ZipFile(epub_path, "r") as zin:
+        items = {name: zin.read(name) for name in zin.namelist()}
+
+    bytes_saved = 0
+    images_processed = 0
+
+    for name, data in list(items.items()):
+        lower_name = name.lower()
+        if lower_name.endswith((".jpg", ".jpeg", ".png", ".gif")):
+            try:
+                original_size = len(data)
+                img = Image.open(BytesIO(data))
+
+                # Resize if larger than max dimensions
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+                # Convert to RGB if necessary (for JPEG output)
+                if img.mode in ("RGBA", "P", "LA"):
+                    # Create white background for transparent images
+                    background = Image.new("RGB", img.size, (255, 255, 255))
+                    if img.mode == "P":
+                        img = img.convert("RGBA")
+                    background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+                    img = background
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+
+                # Compress to JPEG
+                output = BytesIO()
+                img.save(output, "JPEG", quality=quality, optimize=True)
+                compressed_data = output.getvalue()
+
+                # Only use compressed version if smaller
+                if len(compressed_data) < original_size:
+                    # Update filename to .jpg if it was different
+                    new_name = name.rsplit(".", 1)[0] + ".jpg"
+                    if new_name != name:
+                        del items[name]
+                    items[new_name] = compressed_data
+                    bytes_saved += original_size - len(compressed_data)
+                    images_processed += 1
+
+            except Exception as e:
+                logger.warning(f"Failed to compress image {name}: {e}")
+                continue
+
+    # Repack EPUB with compressed images
+    with zipfile.ZipFile(epub_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name, data in items.items():
+            zout.writestr(name, data)
+
+    if images_processed > 0:
+        logger.info(
+            f"Compressed {images_processed} images, saved {bytes_saved / 1024:.1f} KB"
+        )
+
+    return bytes_saved
 
 
 class CalibreError(Exception):
@@ -137,18 +227,35 @@ class CalibreWrapper:
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Look up the original title from cache (Calibre needs exact title, not slug)
+        recipe_title = recipe_name  # Default to what was passed
+        if self._recipe_cache:
+            for r in self._recipe_cache:
+                if r.name == recipe_name:
+                    recipe_title = r.title
+                    break
+        else:
+            # Try to load recipes if cache is empty
+            try:
+                recipes = await self.list_builtin_recipes()
+                for r in recipes:
+                    if r.name == recipe_name:
+                        recipe_title = r.title
+                        break
+            except Exception:
+                pass  # Fall back to using recipe_name as-is
+
         # Build command
+        # Note: Built-in recipes don't universally support --recipe-specific-option
+        # Those options only work if the recipe explicitly defines recipe_specific_options
+        # For built-in recipes, we just use their defaults
         cmd = [
             self.EBOOK_CONVERT,
-            f"{recipe_name}.recipe",
+            f"{recipe_title}.recipe",
             str(output_path),
-            f"--max-articles-per-feed={max_articles}",
-            f"--oldest-article={oldest_days}",
-            "--output-profile=kindle",
+            # kindle_scribe profile works for Kindle Colorsoft (1264x1680 @ 300ppi)
+            "--output-profile=kindle_scribe",
         ]
-
-        if not include_images:
-            cmd.append("--dont-download-recipe")
 
         logger.info(f"Running Calibre: {' '.join(cmd)}")
 
@@ -185,10 +292,32 @@ class CalibreWrapper:
                     f"Recipe '{recipe_name}' produced empty file"
                 )
 
+            file_size = output_path.stat().st_size
             logger.info(
-                f"Generated EPUB: {output_path} "
-                f"({output_path.stat().st_size / 1024:.1f} KB)"
+                f"Generated EPUB: {output_path} ({file_size / 1024:.1f} KB)"
             )
+
+            # Compress images if file is too large for email
+            if file_size > COMPRESSION_THRESHOLD_MED:
+                if file_size > COMPRESSION_THRESHOLD_HIGH:
+                    # Aggressive compression for very large files
+                    quality, max_dims = 50, (600, 900)
+                else:
+                    # Moderate compression
+                    quality, max_dims = 70, (800, 1200)
+
+                logger.info(
+                    f"File size {file_size / 1024 / 1024:.1f}MB exceeds threshold, "
+                    f"compressing with quality={quality}"
+                )
+                compress_epub_images(output_path, quality=quality, max_size=max_dims)
+
+                new_size = output_path.stat().st_size
+                logger.info(
+                    f"After compression: {new_size / 1024:.1f} KB "
+                    f"(reduced {(file_size - new_size) / 1024:.1f} KB)"
+                )
+
             return output_path
 
         except asyncio.TimeoutError:
@@ -229,7 +358,7 @@ class CalibreWrapper:
         safe_title = title.replace("'", "\\'")
         safe_url = feed_url.replace("'", "\\'")
 
-        # Generate a custom recipe for this RSS feed
+        # Generate a custom recipe for this RSS feed with compression settings
         recipe_content = f"""
 from calibre.web.feeds.news import BasicNewsRecipe
 
@@ -239,6 +368,11 @@ class CustomRSSRecipe(BasicNewsRecipe):
     max_articles_per_feed = {max_articles}
     auto_cleanup = True
     no_stylesheets = True
+
+    # Image compression to reduce file size for email delivery
+    compress_news_images = True
+    compress_news_images_max_size = 100  # Max 100KB per image
+    scale_news_images = (800, 1200)      # Max dimensions
 
     feeds = [
         ('{safe_title}', '{safe_url}'),
@@ -291,7 +425,8 @@ class CustomRSSRecipe(BasicNewsRecipe):
             self.EBOOK_CONVERT,
             str(recipe_path),
             str(output_path),
-            "--output-profile=kindle",
+            # kindle_scribe profile works for Kindle Colorsoft
+            "--output-profile=kindle_scribe",
         ]
 
         if not include_images:
@@ -329,10 +464,30 @@ class CustomRSSRecipe(BasicNewsRecipe):
                     f"RSS feed '{feed_title}' produced empty file"
                 )
 
+            file_size = output_path.stat().st_size
             logger.info(
-                f"Generated EPUB: {output_path} "
-                f"({output_path.stat().st_size / 1024:.1f} KB)"
+                f"Generated EPUB: {output_path} ({file_size / 1024:.1f} KB)"
             )
+
+            # Compress images if file is too large for email
+            if file_size > COMPRESSION_THRESHOLD_MED:
+                if file_size > COMPRESSION_THRESHOLD_HIGH:
+                    quality, max_dims = 50, (600, 900)
+                else:
+                    quality, max_dims = 70, (800, 1200)
+
+                logger.info(
+                    f"File size {file_size / 1024 / 1024:.1f}MB exceeds threshold, "
+                    f"compressing with quality={quality}"
+                )
+                compress_epub_images(output_path, quality=quality, max_size=max_dims)
+
+                new_size = output_path.stat().st_size
+                logger.info(
+                    f"After compression: {new_size / 1024:.1f} KB "
+                    f"(reduced {(file_size - new_size) / 1024:.1f} KB)"
+                )
+
             return output_path
 
         except asyncio.TimeoutError:

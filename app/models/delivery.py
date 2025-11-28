@@ -19,6 +19,7 @@ class DeliveryStatus(str, Enum):
     SENDING = "sending"
     SENT = "sent"
     FAILED = "failed"
+    SKIPPED = "skipped"  # Duplicate detected (already sent today)
 
 
 class Delivery(Base):

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     max_file_size_mb: int = 14  # Max EPUB size for email attachment
     calibre_timeout: int = 600  # Calibre recipe execution timeout in seconds
     epub_retention_hours: int = 24  # How long to keep EPUB files after delivery
+    delivery_retention_days: int = 30  # How long to keep delivery records
 
     # Scheduler settings
     scheduler_poll_interval: int = 60  # Seconds between polling for due subscriptions

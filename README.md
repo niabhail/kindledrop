@@ -9,6 +9,8 @@ Self-hosted news delivery service for Kindle devices. Subscribe to news sources,
 - **Per-Subscription Settings** - Control article limits, age, and image inclusion for each source
 - **Clean Dashboard** - See upcoming deliveries, recent activity, and subscription health at a glance
 - **Retry Support** - Failed deliveries can be retried with one click
+- **Smart Deduplication** - Prevents duplicate deliveries on the same day (with Force Send override)
+- **Auto Cleanup** - EPUBs deleted after 24h, delivery records after 30 days
 
 ## Prerequisites
 

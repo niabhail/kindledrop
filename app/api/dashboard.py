@@ -60,6 +60,7 @@ class DailyStats(BaseModel):
     total_today: int
     successful_today: int
     failed_today: int
+    skipped_today: int
 
 
 class DashboardResponse(BaseModel):
@@ -223,11 +224,19 @@ async def get_dashboard(
             Delivery.status == DeliveryStatus.FAILED,
         )
     )
+    skipped_today_result = await db.execute(
+        select(func.count(Delivery.id)).where(
+            Delivery.user_id == user.id,
+            Delivery.created_at >= today_start,
+            Delivery.status == DeliveryStatus.SKIPPED,
+        )
+    )
 
     stats = DailyStats(
         total_today=total_today_result.scalar() or 0,
         successful_today=successful_today_result.scalar() or 0,
         failed_today=failed_today_result.scalar() or 0,
+        skipped_today=skipped_today_result.scalar() or 0,
     )
 
     return DashboardResponse(

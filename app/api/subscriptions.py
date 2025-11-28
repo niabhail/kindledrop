@@ -326,6 +326,13 @@ async def send_now(
                 status="sent",
                 message=f"'{subscription.name}' sent to {user.kindle_email}",
             )
+        elif delivery_result.status == DeliveryStatus.SKIPPED:
+            return SendNowResponse(
+                delivery_id=delivery_result.delivery_id,
+                status="skipped",
+                message=f"'{subscription.name}' already sent today",
+                error_message=delivery_result.error_message,
+            )
         else:
             return SendNowResponse(
                 delivery_id=delivery_result.delivery_id,
@@ -402,4 +409,46 @@ async def resume_all_subscriptions(
     return PauseAllResponse(
         action="resumed",
         affected=count,
+    )
+
+
+class DismissAlertResponse(BaseModel):
+    """Response model for dismiss-alert action."""
+
+    subscription_id: int
+    dismissed: bool
+
+
+@router.post("/{subscription_id}/dismiss-alert")
+async def dismiss_alert(
+    subscription_id: int,
+    user: CurrentUser,
+    db: DbSession,
+) -> DismissAlertResponse:
+    """
+    Dismiss the failure alert for a subscription.
+
+    Clears the last_error field so the subscription no longer
+    appears in "Needs Attention" section.
+    """
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.id == subscription_id,
+            Subscription.user_id == user.id,
+        )
+    )
+    subscription = result.scalar_one_or_none()
+
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subscription not found",
+        )
+
+    subscription.last_error = None
+    await db.flush()
+
+    return DismissAlertResponse(
+        subscription_id=subscription_id,
+        dismissed=True,
     )

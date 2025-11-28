@@ -23,7 +23,7 @@ Self-hosted news delivery service for Kindle. Uses Calibre CLI for EPUB generati
 - Mock external services (Calibre, SMTP)
 
 ## Current Phase
-Phase 4 complete. MVP feature-complete:
+MVP feature-complete with optimizations:
 - Delivery engine (fetch → generate → email)
 - SMTP integration with size validation
 - APScheduler with polling job architecture
@@ -33,6 +33,9 @@ Phase 4 complete. MVP feature-complete:
 - Recipe browser with search
 - Settings page with SMTP testing
 - Error handling with retry support
+- Same-day duplicate detection (SKIPPED status + Force Send)
+- EPUB image compression with Pillow
+- Data retention cleanup (EPUBs 24h, records 30 days)
 
 ## Post-MVP (Future)
 - RSS feed support (custom URLs)

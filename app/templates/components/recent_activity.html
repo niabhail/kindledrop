@@ -13,6 +13,10 @@
                     <svg class="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
                     </svg>
+                    {% elif item.status == 'skipped' %}
+                    <svg class="h-5 w-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/>
+                    </svg>
                     {% elif item.status in ['pending', 'fetching', 'generating', 'sending'] %}
                     <svg class="h-5 w-5 text-blue-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -31,6 +35,8 @@
                         {% if item.article_count %} &middot; {{ item.article_count }} articles{% endif %}
                         {% elif item.status == 'failed' and item.error_message %}
                         {{ item.error_message | truncate(50) }}
+                        {% elif item.status == 'skipped' %}
+                        {{ item.error_message or 'Already sent today' }}
                         {% else %}
                         {{ item.status | capitalize }}
                         {% endif %}
@@ -41,6 +47,7 @@
                 <span class="inline-flex px-2 py-0.5 text-xs font-medium rounded-full
                     {% if item.status == 'sent' %}bg-green-100 text-green-800
                     {% elif item.status == 'failed' %}bg-red-100 text-red-800
+                    {% elif item.status == 'skipped' %}bg-yellow-100 text-yellow-800
                     {% elif item.status in ['pending', 'fetching', 'generating', 'sending'] %}bg-blue-100 text-blue-800
                     {% else %}bg-gray-100 text-gray-800{% endif %}">
                     {{ item.status | capitalize }}
@@ -50,15 +57,18 @@
                 {% endif %}
             </div>
         </div>
-        {% if item.status == 'failed' %}
+        {% if item.status == 'failed' and item.subscription_id %}
         <div class="mt-2 flex justify-end">
             <button
-                hx-post="/api/deliveries/{{ item.id }}/retry"
-                hx-swap="outerHTML"
-                hx-target="closest li"
+                hx-post="/subscriptions/{{ item.subscription_id }}/send"
+                hx-swap="innerHTML"
+                hx-target="#retry-result-{{ item.id }}"
+                hx-indicator="#retry-spinner-{{ item.id }}"
                 class="text-xs text-indigo-600 hover:text-indigo-800">
                 Retry
+                <span id="retry-spinner-{{ item.id }}" class="htmx-indicator">...</span>
             </button>
+            <span id="retry-result-{{ item.id }}" class="text-xs ml-2"></span>
         </div>
         {% endif %}
     </li>

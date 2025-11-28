@@ -1,0 +1,32 @@
+# Production docker-compose for DigitalOcean deployment
+# Uses external network shared with Caddy reverse proxy
+#
+# Deploy: docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  kindledrop:
+    build: .
+    container_name: kindledrop
+    volumes:
+      - kindledrop-data:/data
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - TZ=${TZ:-UTC}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    networks:
+      - niabhail-tech-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  niabhail-tech-network:
+    external: true
+
+volumes:
+  kindledrop-data:
+    driver: local

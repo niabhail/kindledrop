@@ -9,9 +9,10 @@ State machine:
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.delivery import Delivery, DeliveryStatus
@@ -81,6 +82,7 @@ class DeliveryEngine:
         subscription: Subscription,
         user: User,
         scheduled_at: datetime | None = None,
+        force: bool = False,
     ) -> DeliveryResult:
         """
         Execute full delivery pipeline for a subscription.
@@ -107,6 +109,37 @@ class DeliveryEngine:
 
         now = datetime.now(timezone.utc)
         scheduled_at = scheduled_at or now
+
+        # Check for same-day duplicate (skip check if force=True)
+        if not force:
+            existing = await self._check_already_sent_today(db, subscription.id)
+        else:
+            existing = None
+
+        if existing:
+            # Create a SKIPPED delivery record
+            skipped_delivery = Delivery(
+                subscription_id=subscription.id,
+                user_id=user.id,
+                status=DeliveryStatus.SKIPPED,
+                scheduled_at=scheduled_at,
+                started_at=now,
+                completed_at=now,
+                error_message=f"Already sent today (delivery #{existing.id})",
+            )
+            db.add(skipped_delivery)
+            await db.flush()
+
+            logger.info(
+                f"Skipped delivery for '{subscription.name}': "
+                f"already sent today (delivery #{existing.id})"
+            )
+
+            return DeliveryResult(
+                delivery_id=skipped_delivery.id,
+                status=DeliveryStatus.SKIPPED,
+                error_message=f"Already sent today (delivery #{existing.id})",
+            )
 
         # 1. Create delivery record (PENDING)
         delivery = Delivery(
@@ -278,3 +311,28 @@ class DeliveryEngine:
         logger.error(
             f"Delivery {delivery.id} failed at stage '{stage}': {error_message}"
         )
+
+    async def _check_already_sent_today(
+        self,
+        db: AsyncSession,
+        subscription_id: int,
+    ) -> Delivery | None:
+        """
+        Check if a successful delivery exists for this subscription today (UTC).
+
+        Returns the existing delivery if found, None otherwise.
+        """
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        result = await db.execute(
+            select(Delivery)
+            .where(
+                Delivery.subscription_id == subscription_id,
+                Delivery.status == DeliveryStatus.SENT,
+                Delivery.completed_at >= today_start,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
