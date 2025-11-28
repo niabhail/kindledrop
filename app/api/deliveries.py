@@ -2,6 +2,8 @@
 Deliveries API - delivery history and retry functionality.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
@@ -171,3 +173,69 @@ async def retry_delivery(
     new_delivery = result.scalar_one()
 
     return _delivery_to_response(new_delivery, subscription.name)
+
+
+class RetryFailedResponse(BaseModel):
+    """Response model for retry-failed action."""
+
+    retried: int
+    succeeded: int
+    failed: int
+
+
+@router.post("/retry-failed")
+async def retry_failed_deliveries(
+    user: CurrentUser,
+    db: DbSession,
+    engine: DeliveryEngineDep,
+    hours: int = Query(24, ge=1, le=168, description="Retry failed deliveries from the last N hours"),
+) -> RetryFailedResponse:
+    """
+    Retry all failed deliveries from the last N hours.
+
+    Only retries deliveries where the subscription still exists.
+    Default: last 24 hours. Max: 168 hours (7 days).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    result = await db.execute(
+        select(Delivery)
+        .options(selectinload(Delivery.subscription))
+        .where(
+            Delivery.user_id == user.id,
+            Delivery.status == DeliveryStatus.FAILED,
+            Delivery.created_at >= cutoff,
+        )
+    )
+    failed_deliveries = result.scalars().all()
+
+    # Filter out deleted subscriptions
+    retryable = [d for d in failed_deliveries if d.subscription is not None]
+
+    succeeded = 0
+    failed = 0
+
+    for delivery in retryable:
+        # Get full subscription
+        sub_result = await db.execute(
+            select(Subscription).where(Subscription.id == delivery.subscription_id)
+        )
+        subscription = sub_result.scalar_one()
+
+        # Execute retry
+        delivery_result = await engine.execute(
+            db=db,
+            subscription=subscription,
+            user=user,
+        )
+
+        if delivery_result.status == DeliveryStatus.SENT:
+            succeeded += 1
+        else:
+            failed += 1
+
+    return RetryFailedResponse(
+        retried=len(retryable),
+        succeeded=succeeded,
+        failed=failed,
+    )

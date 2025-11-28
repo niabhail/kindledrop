@@ -23,17 +23,25 @@ Self-hosted news delivery service for Kindle. Uses Calibre CLI for EPUB generati
 - Mock external services (Calibre, SMTP)
 
 ## Current Phase
-Phase 3 complete. Scheduling working:
+Phase 4 complete. MVP feature-complete:
 - Delivery engine (fetch → generate → email)
 - SMTP integration with size validation
 - APScheduler with polling job architecture
 - Automatic scheduled deliveries (daily, weekly, interval)
 - Timezone-aware scheduling
+- Enhanced dashboard with status widgets
+- Recipe browser with search
+- Settings page with SMTP testing
+- Error handling with retry support
 
-## Next Phase (Phase 4)
-- Calibre configuration UI
-- Custom recipe management
-- User-uploadable .recipe files
+## Post-MVP (Future)
+- RSS feed support (custom URLs)
+- Multi-user support
+- Recipe credentials (for paywalled sites)
+- Custom .recipe file uploads
+- Delivery preview
+- Mobile-optimized UI
+- Prometheus metrics
 
 ## Commands
 

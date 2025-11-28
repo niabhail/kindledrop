@@ -4,17 +4,139 @@
 
 {% block content %}
 <div class="space-y-6">
-    <div class="flex justify-between items-center">
+    <!-- Header with Quick Actions -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <a href="/subscriptions/new" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
-            + Add Subscription
-        </a>
+        <div class="flex flex-wrap gap-2">
+            <button
+                hx-post="/api/subscriptions/pause-all"
+                hx-confirm="Pause all subscriptions?"
+                hx-swap="none"
+                hx-on::after-request="window.location.reload()"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                Pause All
+            </button>
+            <button
+                hx-post="/api/recipes/refresh"
+                hx-swap="none"
+                hx-indicator="#refresh-spinner"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                Refresh Recipes
+                <span id="refresh-spinner" class="htmx-indicator ml-1">...</span>
+            </button>
+            <a href="/settings#smtp" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                Test Email
+            </a>
+            <a href="/subscriptions/new" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                + Add Subscription
+            </a>
+        </div>
     </div>
 
+    <!-- Summary Stats Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm font-medium text-gray-500">Total Subscriptions</p>
+            <p class="mt-1 text-3xl font-semibold text-gray-900">{{ health.total }}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm font-medium text-gray-500">Active</p>
+            <p class="mt-1 text-3xl font-semibold text-green-600">{{ health.active }}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm font-medium text-gray-500">Deliveries Today</p>
+            <p class="mt-1 text-3xl font-semibold text-gray-900">{{ stats.total_today }}</p>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <p class="text-sm font-medium text-gray-500">Success Rate</p>
+            <p class="mt-1 text-3xl font-semibold {% if stats.total_today > 0 and stats.failed_today == 0 %}text-green-600{% elif stats.failed_today > 0 %}text-yellow-600{% else %}text-gray-900{% endif %}">
+                {% if stats.total_today > 0 %}
+                {{ ((stats.successful_today / stats.total_today) * 100) | round | int }}%
+                {% else %}
+                -
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <!-- Needs Attention (Failing Subscriptions) -->
+    {% if health.failing > 0 %}
+    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+            </div>
+            <div class="ml-3 flex-1">
+                <h3 class="text-sm font-medium text-red-800">Needs Attention</h3>
+                <div class="mt-2 text-sm text-red-700">
+                    <p>{{ health.failing }} subscription{% if health.failing > 1 %}s{% endif %} with repeated failures:</p>
+                    <ul class="mt-2 space-y-1">
+                        {% for fs in health.failing_subscriptions %}
+                        <li class="flex items-center justify-between">
+                            <span>
+                                <strong>{{ fs.name }}</strong> - {{ fs.consecutive_failures }} consecutive failures
+                                {% if fs.last_error %}
+                                <span class="text-red-600 text-xs block">{{ fs.last_error | truncate(80) }}</span>
+                                {% endif %}
+                            </span>
+                            <button
+                                hx-post="/api/subscriptions/{{ fs.id }}/send"
+                                hx-swap="none"
+                                hx-indicator="#retry-{{ fs.id }}"
+                                class="text-red-800 hover:text-red-900 text-sm font-medium underline">
+                                Retry
+                                <span id="retry-{{ fs.id }}" class="htmx-indicator">...</span>
+                            </button>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Two Column Layout: Upcoming + Recent -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Upcoming Deliveries -->
+        <div class="bg-white shadow rounded-lg"
+             hx-get="/dashboard/upcoming"
+             hx-trigger="every 30s"
+             hx-swap="innerHTML"
+             hx-target="#upcoming-content">
+            <div class="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-lg font-medium text-gray-900">Upcoming (24h)</h2>
+                <span class="text-xs text-gray-400">Auto-refreshes</span>
+            </div>
+            <div id="upcoming-content">
+                {% include "components/upcoming_deliveries.html" %}
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="bg-white shadow rounded-lg"
+             hx-get="/dashboard/recent"
+             hx-trigger="every 30s"
+             hx-swap="innerHTML"
+             hx-target="#recent-content">
+            <div class="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-lg font-medium text-gray-900">Recent Activity</h2>
+                <a href="/history" class="text-xs text-indigo-600 hover:text-indigo-800">View all</a>
+            </div>
+            <div id="recent-content">
+                {% include "components/recent_activity.html" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscriptions List -->
     {% if subscriptions %}
     <div class="bg-white shadow rounded-lg">
-        <div class="px-4 py-3 border-b border-gray-200">
-            <h2 class="text-lg font-medium text-gray-900">Subscriptions</h2>
+        <div class="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+            <h2 class="text-lg font-medium text-gray-900">All Subscriptions</h2>
+            <span class="text-sm text-gray-500">{{ subscriptions | length }} total</span>
         </div>
         <ul class="divide-y divide-gray-200">
             {% for sub in subscriptions %}

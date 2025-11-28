@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.dependencies import CurrentUser, DbSession, DeliveryEngineDep
 from app.models import DeliveryStatus, Subscription, SubscriptionType
@@ -340,3 +340,66 @@ async def send_now(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+class PauseAllResponse(BaseModel):
+    """Response model for pause-all/resume-all actions."""
+
+    action: str
+    affected: int
+
+
+@router.post("/pause-all")
+async def pause_all_subscriptions(
+    user: CurrentUser,
+    db: DbSession,
+) -> PauseAllResponse:
+    """Pause all active subscriptions for the current user."""
+    result = await db.execute(
+        update(Subscription)
+        .where(
+            Subscription.user_id == user.id,
+            Subscription.enabled == True,
+        )
+        .values(enabled=False)
+    )
+    await db.commit()
+
+    return PauseAllResponse(
+        action="paused",
+        affected=result.rowcount,
+    )
+
+
+@router.post("/resume-all")
+async def resume_all_subscriptions(
+    user: CurrentUser,
+    db: DbSession,
+) -> PauseAllResponse:
+    """Resume all paused subscriptions for the current user."""
+    # First get all paused subscriptions to recalculate next_run_at
+    paused_result = await db.execute(
+        select(Subscription).where(
+            Subscription.user_id == user.id,
+            Subscription.enabled == False,
+        )
+    )
+    paused_subs = paused_result.scalars().all()
+
+    count = 0
+    for sub in paused_subs:
+        sub.enabled = True
+        sub.next_run_at = calculate_next_run(
+            schedule=sub.schedule,
+            timezone=user.timezone,
+            last_run_at=sub.last_run_at,
+            created_at=sub.created_at,
+        )
+        count += 1
+
+    await db.commit()
+
+    return PauseAllResponse(
+        action="resumed",
+        affected=count,
+    )
