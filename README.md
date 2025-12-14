@@ -2,6 +2,29 @@
 
 Self-hosted news delivery service for Kindle devices. Subscribe to news sources, schedule deliveries, and get your morning news delivered automatically via email.
 
+## Why Kindledrop?
+
+Kindledrop offers the most flexible and privacy-focused solution for automated news delivery to Kindle:
+
+| Feature | Kindledrop | Instapaper | Pocket | P2K |
+|---------|------------|------------|--------|-----|
+| **Cost** | **Free** | $6/mo | $5/mo Premium | $1-2/mo |
+| **Built-in News Sources** | ✅ 300+ | ❌ | ❌ | ❌ |
+| **Multi-Day Scheduling** | ✅ Mon/Wed/Fri | ❌ | ❌ | ❌ |
+| **Custom Intervals** | ✅ Every N hours | ❌ | ❌ | ❌ |
+| **Exact Time Delivery** | ✅ 7:00 AM | ✅ | ❌ | ✅ |
+| **Article Count Limits** | ✅ | ✅ | ❌ | ✅ |
+| **Delivery Dashboard** | ✅ Full stats | ⚠️ Basic | ❌ | ⚠️ Basic |
+| **Image Optimization** | ✅ | ❌ | ❌ | ❌ |
+| **Self-Hosted** | ✅ | ❌ | ❌ | ❌ |
+| **Tags & Organization** | 🔜 Coming Soon | ✅ | ✅ | ❌ |
+| **Mobile App** | ❌ | ✅ | ✅ | ❌ |
+| **Save Web Articles** | 🔜 Coming Soon | ✅ | ✅ | ✅ |
+
+**Best for:** Automated news/magazine delivery, privacy-conscious users, those who want comprehensive monitoring and control.
+
+**5-year savings:** $360 vs Instapaper, $300 vs Pocket Premium.
+
 ## Features
 
 - **2000+ News Sources** - Browse and subscribe to Calibre's built-in recipe library (The Guardian, BBC, NYT, Economist, and more)
