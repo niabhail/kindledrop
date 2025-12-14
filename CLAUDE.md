@@ -36,6 +36,7 @@ MVP feature-complete with optimizations:
 - Same-day duplicate detection (SKIPPED status + Force Send)
 - EPUB image compression with Pillow
 - Data retention cleanup (EPUBs 24h, records 30 days)
+- Password reset system (email-based + emergency script)
 
 ## Post-MVP (Future)
 - RSS feed support (custom URLs)
@@ -67,6 +68,115 @@ uv run alembic upgrade head
 - `app/services/delivery.py` - Delivery engine (fetch → generate → email)
 - `app/services/smtp.py` - Email sending with size validation
 - `app/services/scheduler.py` - APScheduler service (polling job)
-- `app/services/auth.py` - Authentication logic
+- `app/services/auth.py` - Authentication logic and password reset
 - `app/models/` - Database models
 - `app/ui/routes.py` - All HTML page routes
+- `scripts/reset_password.py` - Emergency password reset tool
+
+## Production Deployment (Docker)
+
+### Critical Docker Concepts
+
+**Volume Mounts vs Paths:**
+- `docker-compose.prod.yml` uses a named volume: `kindledrop-data:/data`
+- Inside container: paths like `/data/kindledrop.db` work correctly
+- On host: the volume is managed by Docker, NOT in your code directory
+- Database path in .env: `DATABASE_URL=sqlite+aiosqlite:////data/kindledrop.db` is correct for Docker
+
+**Environment Variables:**
+- Only environment variables listed in `docker-compose.prod.yml` are passed to container
+- New environment variables must be added to the `environment:` section
+- Example: `BASE_URL` must be explicitly added to docker-compose.prod.yml
+- Container reads from both .env file AND docker-compose environment section
+
+### Migration Best Practices
+
+**ALWAYS run migrations inside the Docker container in production:**
+
+```bash
+# ✅ CORRECT - Inside container
+docker exec kindledrop uv run alembic upgrade head
+
+# ❌ WRONG - On host (will use wrong database path)
+uv run alembic upgrade head
+```
+
+**Why?**
+- Container has correct volume mounts for database access
+- Container has correct Python environment and dependencies
+- Host machine may use different database path (e.g., `./data` vs `/data`)
+
+### Deployment Checklist
+
+When deploying code changes to production:
+
+1. **Pull latest code:**
+   ```bash
+   cd /opt/niabhail-platform/kindledrop
+   git pull origin main
+   ```
+
+2. **Check for new environment variables:**
+   - Look for changes in `docker-compose.prod.yml` environment section
+   - Look for new settings in `app/config.py`
+   - Update production `.env` file if needed
+
+3. **Run migrations (if schema changed):**
+   ```bash
+   docker exec kindledrop uv run alembic upgrade head
+   ```
+
+4. **Restart container:**
+   ```bash
+   docker-compose -f docker-compose.prod.yml restart
+   ```
+
+5. **Verify deployment:**
+   ```bash
+   # Check logs for errors
+   docker logs kindledrop --tail=50
+
+   # Verify environment variables loaded
+   docker exec kindledrop env | grep BASE_URL
+
+   # Check health
+   curl http://localhost:8000/
+   ```
+
+### Troubleshooting Production Issues
+
+**Container can't find database:**
+- Don't run migrations from host machine
+- Database is in Docker volume, not host filesystem
+- Use: `docker exec kindledrop <command>`
+
+**Environment variable not available:**
+- Check if variable is in `docker-compose.prod.yml` environment section
+- Restart container after adding to docker-compose
+- Verify with: `docker exec kindledrop env | grep VAR_NAME`
+
+**Need to access production database:**
+```bash
+# Find the database in Docker volume
+docker exec kindledrop ls -la /data/
+
+# Open SQLite shell
+docker exec -it kindledrop sqlite3 /data/kindledrop.db
+```
+
+### Password Reset
+
+Two methods available:
+
+1. **Email-based (standard):**
+   - User clicks "Forgot password?" on login page
+   - Requires SMTP configured and BASE_URL set
+   - Token expires in 1 hour
+
+2. **Direct reset (emergency):**
+   ```bash
+   docker exec kindledrop python scripts/reset_password.py USERNAME PASSWORD
+   ```
+   - Use when email method unavailable
+   - Requires SSH access to server
+   - Immediate password reset

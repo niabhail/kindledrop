@@ -11,6 +11,7 @@ Self-hosted news delivery service for Kindle devices. Subscribe to news sources,
 - **Retry Support** - Failed deliveries can be retried with one click
 - **Smart Deduplication** - Prevents duplicate deliveries on the same day (with Force Send override)
 - **Auto Cleanup** - EPUBs deleted after 24h, delivery records after 30 days
+- **Password Reset** - Email-based password recovery with secure tokens
 
 ## Prerequisites
 
@@ -91,7 +92,7 @@ sudo sh get-docker.sh
 git clone https://github.com/your-username/kindledrop.git
 cd kindledrop
 cp .env.example .env
-nano .env  # Add SECRET_KEY and configure settings
+nano .env  # Add SECRET_KEY, BASE_URL, and other settings
 
 # Initialize database (first time only)
 docker compose -f docker-compose.prod.yml run --rm kindledrop uv run alembic upgrade head
@@ -102,6 +103,8 @@ docker compose -f docker-compose.prod.yml up -d
 # View logs
 docker compose -f docker-compose.prod.yml logs -f
 ```
+
+**Important:** Set `BASE_URL` in your `.env` file to your full domain (e.g., `BASE_URL=https://kindledrop.yourdomain.com`).
 
 **Reverse Proxy (nginx):**
 
@@ -132,6 +135,7 @@ sudo certbot --nginx -d kindledrop.yourdomain.com
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `SECRET_KEY` | Yes | - | Session encryption key. Generate with `openssl rand -hex 32` |
+| `BASE_URL` | Yes (prod) | `http://localhost:8000` | Full URL where Kindledrop is accessible (for password reset emails) |
 | `DATABASE_URL` | No | `sqlite:///data/kindledrop.db` | Database connection string |
 | `EPUB_DIR` | No | `data/epubs` | Directory for generated EPUB files |
 | `LOG_LEVEL` | No | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
@@ -278,6 +282,16 @@ To receive deliveries on your Kindle:
 1. Use a reputable SMTP provider (Mailjet, SendGrid) instead of personal email
 2. Ensure your from address is verified with your SMTP provider
 3. Use a custom domain with proper SPF/DKIM records
+
+### "Password reset email not received"
+
+**Cause:** BASE_URL not configured or SMTP not set up.
+
+**Solutions:**
+1. Verify `BASE_URL` is set in your `.env` file
+2. Ensure SMTP is configured in Settings
+3. Check your email spam folder
+4. Verify your email address is correct in account settings
 
 ## License
 
