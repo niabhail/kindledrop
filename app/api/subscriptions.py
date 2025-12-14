@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, update
 
 from app.dependencies import CurrentUser, DbSession, DeliveryEngineDep
-from app.models import DeliveryStatus, Subscription, SubscriptionType
+from app.models import DeliveryStatus, Subscription, SubscriptionStatus, SubscriptionType
 from app.services.delivery import DeliveryConfigError
 from app.services.scheduler import calculate_next_run
 
@@ -72,7 +72,7 @@ async def list_subscriptions(
             schedule=s.schedule,
             settings=s.settings,
             last_run_at=s.last_run_at.isoformat() if s.last_run_at else None,
-            last_status=s.last_status.value if s.last_status else None,
+            last_status=s.last_status.value if isinstance(s.last_status, SubscriptionStatus) else s.last_status,
             next_run_at=s.next_run_at.isoformat() if s.next_run_at else None,
         )
         for s in subscriptions
@@ -145,7 +145,7 @@ async def get_subscription(
         schedule=subscription.schedule,
         settings=subscription.settings,
         last_run_at=subscription.last_run_at.isoformat() if subscription.last_run_at else None,
-        last_status=subscription.last_status.value if subscription.last_status else None,
+        last_status=subscription.last_status.value if isinstance(subscription.last_status, SubscriptionStatus) else subscription.last_status,
         next_run_at=subscription.next_run_at.isoformat() if subscription.next_run_at else None,
     )
 
@@ -193,7 +193,7 @@ async def update_subscription(
         schedule=subscription.schedule,
         settings=subscription.settings,
         last_run_at=subscription.last_run_at.isoformat() if subscription.last_run_at else None,
-        last_status=subscription.last_status.value if subscription.last_status else None,
+        last_status=subscription.last_status.value if isinstance(subscription.last_status, SubscriptionStatus) else subscription.last_status,
         next_run_at=subscription.next_run_at.isoformat() if subscription.next_run_at else None,
     )
 
@@ -256,7 +256,7 @@ async def toggle_subscription(
         schedule=subscription.schedule,
         settings=subscription.settings,
         last_run_at=subscription.last_run_at.isoformat() if subscription.last_run_at else None,
-        last_status=subscription.last_status.value if subscription.last_status else None,
+        last_status=subscription.last_status.value if isinstance(subscription.last_status, SubscriptionStatus) else subscription.last_status,
         next_run_at=subscription.next_run_at.isoformat() if subscription.next_run_at else None,
     )
 
