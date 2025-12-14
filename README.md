@@ -17,9 +17,9 @@ Kindledrop offers the most flexible and privacy-focused solution for automated n
 | **Delivery Dashboard** | ✅ Full stats | ⚠️ Basic | ❌ | ⚠️ Basic |
 | **Image Optimization** | ✅ | ❌ | ❌ | ❌ |
 | **Self-Hosted** | ✅ | ❌ | ❌ | ❌ |
+| **RSS Feed Support** | ✅ Custom URLs | ⚠️ Limited | ✅ | ✅ |
 | **Tags & Organization** | 🔜 Coming Soon | ✅ | ✅ | ❌ |
 | **Mobile App** | ❌ | ✅ | ✅ | ❌ |
-| **Save Web Articles** | 🔜 Coming Soon | ✅ | ✅ | ✅ |
 
 **Best for:** Automated news/magazine delivery, privacy-conscious users, those who want comprehensive monitoring and control.
 
