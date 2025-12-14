@@ -13,6 +13,7 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - TZ=${TZ:-UTC}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - BASE_URL=${BASE_URL:-http://localhost:8000}
     restart: unless-stopped
     networks:
       - niabhail-tech-network
