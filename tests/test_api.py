@@ -495,3 +495,71 @@ async def test_subscription_type_handling(
     )
 
     assert response.type == "recipe"
+
+
+@pytest.mark.asyncio
+async def test_create_subscription_with_weekly_multi_day_schedule(
+    db_session: AsyncSession,
+    test_user: User,
+):
+    """Test creating a subscription with multi-day weekly schedule via API."""
+    from app.models import Subscription
+    from app.services.scheduler import calculate_next_run
+
+    # Create subscription with weekly schedule on Mon, Wed, Fri
+    subscription = Subscription(
+        user_id=test_user.id,
+        type=SubscriptionType.RECIPE,
+        source="test_recipe",
+        name="Multi-day Test",
+        schedule={"type": "weekly", "time": "09:00", "days": ["mon", "wed", "fri"]},
+        settings={"max_articles": 25},
+    )
+    db_session.add(subscription)
+    await db_session.flush()
+    await db_session.refresh(subscription)
+
+    assert subscription.schedule["type"] == "weekly"
+    assert subscription.schedule["days"] == ["mon", "wed", "fri"]
+    assert subscription.schedule["time"] == "09:00"
+
+    # Verify next_run can be calculated
+    next_run = calculate_next_run(
+        schedule=subscription.schedule,
+        timezone=test_user.timezone,
+    )
+    assert next_run is not None
+
+
+@pytest.mark.asyncio
+async def test_create_subscription_with_interval_schedule(
+    db_session: AsyncSession,
+    test_user: User,
+):
+    """Test creating a subscription with interval schedule via API."""
+    from app.models import Subscription
+    from app.services.scheduler import calculate_next_run
+
+    # Create subscription with 6-hour interval
+    subscription = Subscription(
+        user_id=test_user.id,
+        type=SubscriptionType.RSS,
+        source="https://example.com/feed.xml",
+        name="Interval Test",
+        schedule={"type": "interval", "interval_hours": 6},
+        settings={"max_articles": 10},
+    )
+    db_session.add(subscription)
+    await db_session.flush()
+    await db_session.refresh(subscription)
+
+    assert subscription.schedule["type"] == "interval"
+    assert subscription.schedule["interval_hours"] == 6
+
+    # Verify next_run can be calculated
+    next_run = calculate_next_run(
+        schedule=subscription.schedule,
+        timezone=test_user.timezone,
+        created_at=subscription.created_at,
+    )
+    assert next_run is not None

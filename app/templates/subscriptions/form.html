@@ -65,7 +65,7 @@
             <div class="space-y-4">
                 <div>
                     <label for="schedule_type" class="block text-sm font-medium text-gray-700">Type</label>
-                    <select name="schedule_type" id="schedule_type"
+                    <select name="schedule_type" id="schedule_type" onchange="updateScheduleFields()"
                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
                         <option value="daily" {% if (subscription.schedule.type if subscription else 'daily') == 'daily' %}selected{% endif %}>Daily</option>
                         <option value="weekly" {% if subscription and subscription.schedule.type == 'weekly' %}selected{% endif %}>Weekly</option>
@@ -73,11 +73,41 @@
                         <option value="manual" {% if subscription and subscription.schedule.type == 'manual' %}selected{% endif %}>Manual only</option>
                     </select>
                 </div>
-                <div>
+                <div id="time-field">
                     <label for="schedule_time" class="block text-sm font-medium text-gray-700">Time</label>
                     <input type="time" name="schedule_time" id="schedule_time"
                         value="{{ subscription.schedule.time if subscription else '07:00' }}"
                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div id="days-field" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Days of Week</label>
+                    <div class="grid grid-cols-4 gap-2">
+                        {% set days = [
+                            ('mon', 'Mon'),
+                            ('tue', 'Tue'),
+                            ('wed', 'Wed'),
+                            ('thu', 'Thu'),
+                            ('fri', 'Fri'),
+                            ('sat', 'Sat'),
+                            ('sun', 'Sun')
+                        ] %}
+                        {% for day_value, day_label in days %}
+                        <label class="flex items-center">
+                            <input type="checkbox" name="schedule_days" value="{{ day_value }}"
+                                {% if subscription and subscription.schedule.days and day_value in subscription.schedule.days %}checked{% endif %}
+                                class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                            <span class="ml-2 text-sm text-gray-700">{{ day_label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Select one or more days</p>
+                </div>
+                <div id="interval-field" class="hidden">
+                    <label for="interval_hours" class="block text-sm font-medium text-gray-700">Interval (hours)</label>
+                    <input type="number" name="interval_hours" id="interval_hours" min="1" max="168"
+                        value="{{ subscription.schedule.interval_hours if subscription and subscription.schedule.interval_hours else 12 }}"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    <p class="mt-1 text-xs text-gray-500">Delivery repeats every N hours (1-168)</p>
                 </div>
             </div>
         </fieldset>
@@ -132,4 +162,35 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+function updateScheduleFields() {
+    const scheduleType = document.getElementById('schedule_type').value;
+    const timeField = document.getElementById('time-field');
+    const daysField = document.getElementById('days-field');
+    const intervalField = document.getElementById('interval-field');
+
+    // Show/hide fields based on schedule type
+    if (scheduleType === 'daily' || scheduleType === 'weekly') {
+        timeField.classList.remove('hidden');
+    } else {
+        timeField.classList.add('hidden');
+    }
+
+    if (scheduleType === 'weekly') {
+        daysField.classList.remove('hidden');
+    } else {
+        daysField.classList.add('hidden');
+    }
+
+    if (scheduleType === 'interval') {
+        intervalField.classList.remove('hidden');
+    } else {
+        intervalField.classList.add('hidden');
+    }
+}
+
+// Run on page load to set initial visibility
+document.addEventListener('DOMContentLoaded', updateScheduleFields);
+</script>
 {% endblock %}
