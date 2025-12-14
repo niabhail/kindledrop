@@ -48,10 +48,40 @@ async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
 
 @pytest.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """
+    HTTP client for API tests WITHOUT authentication.
+    Use authed_client fixture for authenticated requests.
+    """
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def authed_client(
+    db_session: AsyncSession, test_user
+) -> AsyncGenerator[AsyncClient, None]:
+    """
+    HTTP client for API tests WITH authentication.
+    Automatically injects test_user as the current user.
+    """
+    from app.dependencies import get_current_user
+
+    async def override_get_db():
+        yield db_session
+
+    async def override_get_current_user():
+        return test_user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
