@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
+import secrets
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from passlib.context import CryptContext
@@ -76,3 +77,67 @@ async def create_user(
 async def user_count(db: AsyncSession) -> int:
     result = await db.execute(select(User))
     return len(result.scalars().all())
+
+
+async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
+    """Get user by email address."""
+    result = await db.execute(select(User).where(User.email == email))
+    return result.scalar_one_or_none()
+
+
+async def create_password_reset_token(db: AsyncSession, email: str) -> str | None:
+    """Create a password reset token for a user.
+
+    Returns the reset token if user exists, None otherwise.
+    """
+    user = await get_user_by_email(db, email)
+    if not user:
+        return None
+
+    # Generate secure random token
+    token = secrets.token_urlsafe(32)
+
+    # Set token and expiration (1 hour)
+    user.reset_token = token
+    user.reset_token_expires = datetime.utcnow() + timedelta(hours=1)
+
+    await db.commit()
+    return token
+
+
+async def verify_reset_token(db: AsyncSession, token: str) -> User | None:
+    """Verify a password reset token and return the user if valid.
+
+    Returns None if token is invalid or expired.
+    """
+    result = await db.execute(select(User).where(User.reset_token == token))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return None
+
+    # Check if token is expired
+    if not user.reset_token_expires or user.reset_token_expires < datetime.utcnow():
+        return None
+
+    return user
+
+
+async def reset_password_with_token(
+    db: AsyncSession, token: str, new_password: str
+) -> bool:
+    """Reset a user's password using a valid reset token.
+
+    Returns True if successful, False otherwise.
+    """
+    user = await verify_reset_token(db, token)
+    if not user:
+        return False
+
+    # Update password and clear reset token
+    user.password_hash = hash_password(new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+
+    await db.commit()
+    return True

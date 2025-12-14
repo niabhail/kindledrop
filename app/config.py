@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./data/kindledrop.db"
     epub_dir: Path = Path("/data/epubs")
     log_level: str = "INFO"
+    base_url: str = "http://localhost:8000"  # Base URL for generating password reset links
 
     # Delivery settings
     max_file_size_mb: int = 14  # Max EPUB size for email attachment

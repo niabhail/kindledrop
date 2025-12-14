@@ -157,6 +157,69 @@ async def send_kindle_email(
         raise SMTPError(f"Failed to send email: {e}")
 
 
+async def send_password_reset_email(
+    config: SMTPConfig,
+    to_email: str,
+    reset_url: str,
+) -> None:
+    """
+    Send password reset email with reset link.
+
+    Args:
+        config: SMTP server configuration
+        to_email: Recipient email address
+        reset_url: Password reset URL with token
+
+    Raises:
+        SMTPConnectionError: If cannot connect to SMTP server
+        SMTPAuthError: If authentication fails
+        SMTPError: For other sending errors
+    """
+    # Build email message
+    message = MIMEMultipart()
+    message["From"] = config.from_email
+    message["To"] = to_email
+    message["Subject"] = "Password Reset - Kindledrop"
+
+    # Email body with reset link
+    body = MIMEText(
+        f"You requested a password reset for your Kindledrop account.\n\n"
+        f"Click the link below to reset your password:\n"
+        f"{reset_url}\n\n"
+        f"This link will expire in 1 hour.\n\n"
+        f"If you didn't request this reset, you can safely ignore this email.\n\n"
+        f"-- Kindledrop",
+        "plain",
+    )
+    message.attach(body)
+
+    logger.info(f"Sending password reset email to {to_email}")
+
+    try:
+        await aiosmtplib.send(
+            message,
+            hostname=config.host,
+            port=config.port,
+            username=config.username,
+            password=config.password,
+            start_tls=config.use_tls,
+        )
+        logger.info(f"Password reset email sent successfully to {to_email}")
+
+    except aiosmtplib.SMTPAuthenticationError as e:
+        raise SMTPAuthError(
+            f"SMTP authentication failed for {config.username}@{config.host}: {e}"
+        )
+
+    except aiosmtplib.SMTPConnectError as e:
+        raise SMTPConnectionError(
+            f"Cannot connect to SMTP server {config.host}:{config.port}: {e}"
+        )
+
+    except aiosmtplib.SMTPException as e:
+        raise SMTPError(f"Failed to send password reset email: {e}")
+
+
 async def verify_smtp_connection(config: SMTPConfig) -> bool:
     """
     Verify SMTP connection and authentication.
