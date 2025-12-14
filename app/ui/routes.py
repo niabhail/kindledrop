@@ -596,6 +596,8 @@ async def subscription_create(
     rss_url: Annotated[str | None, Form()] = None,
     schedule_type: Annotated[str, Form()] = "daily",
     schedule_time: Annotated[str, Form()] = "07:00",
+    schedule_days: Annotated[list[str] | None, Form()] = None,
+    interval_hours: Annotated[int | None, Form()] = None,
     max_articles: Annotated[int, Form()] = 25,
     oldest_days: Annotated[int, Form()] = 7,
     include_images: Annotated[bool, Form()] = False,
@@ -616,7 +618,12 @@ async def subscription_create(
             status_code=400,
         )
 
+    # Build schedule dict based on type
     schedule_dict = {"type": schedule_type, "time": schedule_time}
+    if schedule_type == "weekly" and schedule_days:
+        schedule_dict["days"] = schedule_days
+    elif schedule_type == "interval" and interval_hours:
+        schedule_dict["interval_hours"] = interval_hours
 
     # Calculate initial next_run_at
     next_run = calculate_next_run(
@@ -682,6 +689,8 @@ async def subscription_update(
     name: Annotated[str, Form()],
     schedule_type: Annotated[str, Form()] = "daily",
     schedule_time: Annotated[str, Form()] = "07:00",
+    schedule_days: Annotated[list[str] | None, Form()] = None,
+    interval_hours: Annotated[int | None, Form()] = None,
     max_articles: Annotated[int, Form()] = 25,
     oldest_days: Annotated[int, Form()] = 7,
     include_images: Annotated[bool, Form()] = False,
@@ -700,7 +709,12 @@ async def subscription_update(
         return RedirectResponse(url="/", status_code=302)
 
     subscription.name = name
+    # Build schedule dict based on type
     schedule_dict = {"type": schedule_type, "time": schedule_time}
+    if schedule_type == "weekly" and schedule_days:
+        schedule_dict["days"] = schedule_days
+    elif schedule_type == "interval" and interval_hours:
+        schedule_dict["interval_hours"] = interval_hours
     subscription.schedule = schedule_dict
     subscription.settings = {
         "max_articles": max_articles,
