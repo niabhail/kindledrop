@@ -18,9 +18,33 @@ Self-hosted news delivery service for Kindle. Uses Calibre CLI for EPUB generati
 - UI routes in `app/ui/` return HTML templates
 
 ### Testing
+
+**Quick Start:**
+```bash
+# Run all tests
+uv run pytest -v
+
+# Run specific file
+uv run pytest tests/test_delivery.py -v
+
+# Run specific test
+uv run pytest tests/test_api.py::test_create_subscription_directly_in_db -v
+```
+
+**Current Test Coverage (53 tests, ~0.8s runtime):**
+- `test_api.py` (19 tests) - API endpoints + regression tests
+- `test_delivery.py` (8 tests) - Delivery pipeline, error handling
+- `test_scheduler.py` (15 tests) - Schedule calculation, timezone logic
+- `test_smtp.py` (7 tests) - SMTP sending, size validation
+- `test_calibre.py` (4 tests) - Calibre wrapper utilities
+
+**Testing Principles:**
 - Use pytest-asyncio for async tests
-- Fixtures in `tests/conftest.py`
-- Mock external services (Calibre, SMTP)
+- Fixtures in `tests/conftest.py` (db_session, client, authed_client, test_user, mocks)
+- Mock external services (Calibre, SMTP) - never hit real services
+- Use `authed_client` fixture for authenticated API tests
+- Write regression tests when bugs are fixed (see test_api.py)
+- Focus on happy path + critical error cases, not 100% coverage
 
 ## Current Phase
 MVP feature-complete with optimizations:
