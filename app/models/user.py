@@ -25,6 +25,12 @@ class User(Base):
         server_default=func.now(),
     )
 
+    # Password reset fields
+    reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reset_token_expires: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     subscriptions: Mapped[list["Subscription"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",

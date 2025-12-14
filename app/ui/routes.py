@@ -16,12 +16,17 @@ from app.services.auth import (
     SESSION_COOKIE_NAME,
     SESSION_MAX_AGE,
     authenticate_user,
+    create_password_reset_token,
     create_session_token,
     create_user,
+    get_user_by_email,
+    reset_password_with_token,
     user_count,
+    verify_reset_token,
 )
 from app.services.scheduler import calculate_next_run
-from app.services.smtp import SMTPConfig, SMTPError, verify_smtp_connection
+from app.services.smtp import SMTPConfig, SMTPError, send_password_reset_email, verify_smtp_connection
+from app.config import settings
 
 
 @dataclass
@@ -331,6 +336,131 @@ async def logout():
     resp = RedirectResponse(url="/login", status_code=302)
     resp.delete_cookie(key=SESSION_COOKIE_NAME)
     return resp
+
+
+@router.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(
+    request: Request,
+    user: CurrentUserOptional,
+):
+    """Show forgot password form."""
+    if user:
+        return RedirectResponse(url="/", status_code=302)
+    return templates.TemplateResponse("forgot_password.html", {"request": request})
+
+
+@router.post("/forgot-password")
+async def forgot_password_submit(
+    request: Request,
+    db: DbSession,
+    email: Annotated[str, Form()],
+):
+    """Process forgot password request and send reset email."""
+    # Always show success message to prevent email enumeration
+    success_message = (
+        "If an account exists with that email, "
+        "a password reset link has been sent."
+    )
+
+    # Try to create reset token
+    token = await create_password_reset_token(db, email)
+
+    # If user exists, send reset email
+    if token:
+        user = await get_user_by_email(db, email)
+        if user and user.smtp_config:
+            try:
+                smtp_config = SMTPConfig.from_dict(user.smtp_config)
+                reset_url = f"{settings.base_url}/reset-password?token={token}"
+                await send_password_reset_email(smtp_config, email, reset_url)
+            except SMTPError:
+                # Log error but don't reveal to user
+                pass
+
+    return templates.TemplateResponse(
+        "forgot_password.html",
+        {"request": request, "success": success_message},
+    )
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(
+    request: Request,
+    db: DbSession,
+    token: str = Query(...),
+    user: CurrentUserOptional = None,
+):
+    """Show reset password form if token is valid."""
+    if user:
+        return RedirectResponse(url="/", status_code=302)
+
+    # Verify token is valid
+    reset_user = await verify_reset_token(db, token)
+    if not reset_user:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "error": "Invalid or expired reset link. Please request a new one.",
+                "token_invalid": True,
+            },
+        )
+
+    return templates.TemplateResponse(
+        "reset_password.html",
+        {"request": request, "token": token},
+    )
+
+
+@router.post("/reset-password")
+async def reset_password_submit(
+    request: Request,
+    db: DbSession,
+    token: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    confirm_password: Annotated[str, Form()],
+):
+    """Process password reset."""
+    # Validate passwords match
+    if password != confirm_password:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "token": token,
+                "error": "Passwords do not match",
+            },
+            status_code=400,
+        )
+
+    # Validate password length
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "token": token,
+                "error": "Password must be at least 8 characters",
+            },
+            status_code=400,
+        )
+
+    # Reset password
+    success = await reset_password_with_token(db, token, password)
+
+    if not success:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {
+                "request": request,
+                "error": "Invalid or expired reset link. Please request a new one.",
+                "token_invalid": True,
+            },
+            status_code=400,
+        )
+
+    # Redirect to login with success message
+    return RedirectResponse(url="/login?reset=success", status_code=302)
 
 
 @router.get("/setup", response_class=HTMLResponse)
