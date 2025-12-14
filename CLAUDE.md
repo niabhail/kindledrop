@@ -46,6 +46,13 @@ uv run pytest tests/test_api.py::test_create_subscription_directly_in_db -v
 - Write regression tests when bugs are fixed (see test_api.py)
 - Focus on happy path + critical error cases, not 100% coverage
 
+**IMPORTANT - Always Add Tests:**
+- **Before fixing a bug:** Write a failing test that reproduces it
+- **After fixing a bug:** Ensure the test passes (regression test)
+- **When adding a feature:** Add tests for new API endpoints or business logic
+- **When refactoring:** Run tests to ensure nothing breaks
+- Run `uv run pytest -v` before committing to verify all tests pass
+
 ## Current Phase
 MVP feature-complete with optimizations:
 - Delivery engine (fetch → generate → email)
